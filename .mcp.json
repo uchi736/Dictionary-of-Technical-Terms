@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "context7": {
+      "type": "sse",
+      "url": "https://mcp.context7.com/sse"
+    },
+    "sequential-thinking": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "npx", "@modelcontextprotocol/server-sequential-thinking"],
+      "env": {}
+    },
+    "serena": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": [
+        "/c",
+        "uv tool run --from git+https://github.com/oraios/serena serena start-mcp-server --transport stdio --context ide-assistant --project C:\\agent\\arxiv-research-agent"
+      ],
+      "cwd": "C:\\agent\\arxiv-research-agent",
+      "env": {}
+    }
+  }
+}

@@ -23,15 +23,14 @@ import pickle
 import hashlib
 import itertools
 import logging
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# 既存のベースクラスを継承
-from extractors.statistical_extractor_V2 import StatisticalTermExtractorV2
-from extractors.statistical_extractor import StatisticalTermExtractor
-from src.utils.base_extractor import Term
+# ベースクラスとデータモデルをインポート
+from dictionary_system.core.models.base_extractor import BaseExtractor, Term
 
 # 必要なライブラリ
 import numpy as np
@@ -109,7 +108,7 @@ class TermListStructured(BaseModel):
     terms: List[TermStructured] = Field(default_factory=list, description="専門用語のリスト")
 
 # ── Enhanced Term Extractor V3 ─────────────────
-class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
+class EnhancedTermExtractorV3(BaseExtractor):
     """統合版専門用語抽出器（SemRe-Rank + RAG + Azure OpenAI）"""
 
     def __init__(
@@ -131,7 +130,7 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         cache_dir: str = "cache/embeddings",
         # RAG/Azure OpenAI用パラメータ
         use_rag_context: bool = True,
-        use_azure_openai: bool = False,
+        use_azure_openai: bool = True,  # Azure OpenAIを必須に
         db_url: Optional[str] = None,
         collection_name: str = "documents",
         jargon_table_name: str = "jargon_dictionary"
@@ -146,21 +145,32 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
             collection_name: ベクトルストアのコレクション名
             jargon_table_name: 用語辞書テーブル名
         """
-        super().__init__(
-            use_llm_validation=use_llm_validation,
-            min_term_length=min_term_length,
-            max_term_length=max_term_length,
-            min_frequency=min_frequency,
-            k_neighbors=k_neighbors,
-            sim_threshold=sim_threshold,
-            alpha=alpha,
-            gamma=gamma,
-            beta=beta,
-            w_pagerank=w_pagerank,
-            embedding_model=embedding_model,
-            use_cache=use_cache,
-            cache_dir=cache_dir
-        )
+        super().__init__()
+
+        # 基本パラメータ
+        self.use_llm_validation = use_llm_validation
+        self.min_term_length = min_term_length
+        self.max_term_length = max_term_length
+        self.min_frequency = min_frequency
+
+        # SemRe-Rankパラメータ
+        self.k_neighbors = k_neighbors
+        self.sim_threshold = sim_threshold
+        self.alpha = alpha
+        self.gamma = gamma
+        self.beta = beta
+        self.w_pagerank = w_pagerank
+        self.embedding_model = embedding_model or "paraphrase-multilingual-MiniLM-L12-v2"
+        self.use_cache = use_cache
+        self.cache_dir = Path(cache_dir)
+
+        # 埋め込みモデルの初期化
+        if not embedding_model:  # Azure OpenAI Embeddingsを使わない場合
+            self.embedder = SentenceTransformer(self.embedding_model)
+
+        # キャッシュディレクトリの作成
+        if self.use_cache:
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self.use_rag_context = use_rag_context
         self.use_azure_openai = use_azure_openai
@@ -231,17 +241,66 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
             console.print(f"[yellow]RAGベクトルストア接続失敗: {e}[/yellow]")
             self.use_rag_context = False
 
-    def _setup_domain_knowledge(self):
-        """ドメイン知識の設定"""
-        self.domain_keywords = {
-            "医薬": ["品", "部外品", "製剤", "原薬", "添加剤", "成分", "薬効", "薬理", "薬物"],
-            "製造": ["管理", "工程", "バリデーション", "設備", "施設", "製法", "品質", "検証"],
-            "品質": ["管理", "保証", "試験", "規格", "基準", "標準", "適合", "検査"],
-            "規制": ["要件", "申請", "承認", "届出", "査察", "法令", "通知", "ガイドライン"],
-            "安全": ["性", "評価", "リスク", "毒性", "副作用", "有害", "事象"],
-            "技術": ["分析", "方法", "手法", "システム", "プロセス", "機器", "装置"],
-        }
+    def extract_headings(self, text: str) -> Set[str]:
+        """見出しから専門用語を抽出"""
+        heading_terms = set()
 
+        # 見出しパターン
+        heading_patterns = [
+            r'^#{1,6}\s+(.+)$',  # マークダウン形式 # ## ### など
+            r'^\d+\.\s+(.+)$',   # 1. 2. 3. など
+            r'^[一二三四五六七八九十]+[、．]\s*(.+)$',  # 一、二、など
+            r'^第[一二三四五六七八九十\d]+[章節項]\s*(.+)$',  # 第1章、第一節など
+            r'^\[\d+\]\s*(.+)$',  # [1] [2] など
+        ]
+
+        # 行ごとに処理
+        for line in text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+
+            for pattern in heading_patterns:
+                match = re.match(pattern, line)
+                if match:
+                    heading_text = match.group(1)
+                    # 見出しから用語候補を抽出
+                    term_patterns = [
+                        r'[ァ-ヶー]+',  # カタカナ
+                        r'[一-龯]{2,}',  # 漢字（2文字以上）
+                        r'[A-Z][A-Za-z0-9]*',  # 英数字
+                        r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+',  # カタカナ+漢字
+                    ]
+
+                    for term_pattern in term_patterns:
+                        terms = re.findall(term_pattern, heading_text)
+                        for term in terms:
+                            if 2 <= len(term) <= 15:  # 最小/最大文字数チェック
+                                heading_terms.add(term)
+                    break
+
+        return heading_terms
+
+    def _is_likely_technical_term(self, term: str) -> bool:
+        """技術用語らしさを判定"""
+        # カタカナ+漢字の組み合わせ
+        if re.search(r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+', term):
+            return True
+        # 英数字を含む
+        if re.search(r'[A-Za-z0-9]', term):
+            return True
+        # 特定のサフィックス
+        technical_suffixes = ['システム', '機関', '方式', '技術', '機構', 'エンジン', '装置', '設備']
+        for suffix in technical_suffixes:
+            if term.endswith(suffix):
+                return True
+        # 長い複合語（4文字以上）
+        if len(term) >= 4:
+            return True
+        return False
+
+    def _setup_domain_knowledge(self):
+        """ストップワードの設定"""
         self.stopwords_extended = {
             "こと", "もの", "ため", "場合", "とき", "ところ", "方法",
             "状態", "結果", "目的", "対象", "内容", "情報", "データ",
@@ -249,6 +308,431 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
             "確認", "実施", "作成", "使用", "管理", "処理", "記録",
             "年", "月", "日", "時", "分", "秒", "件", "個", "つ"
         }
+
+    def _extract_candidates(self, text: str) -> Dict[str, int]:
+        """基本的な候補抽出（SudachiPy代替）"""
+        candidates = defaultdict(int)
+
+        # 正規表現パターンで日本語の複合語を抽出
+        patterns = [
+            r'[ァ-ヶー]+',  # カタカナ
+            r'[一-龯]{2,}',  # 漢字（2文字以上）
+            r'[A-Z][A-Za-z0-9]*',  # 英数字
+            r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+',  # カタカナ+漢字
+            r'[一-龯]+[ァ-ヶー]+[一-龯]+',  # 漢字+カタカナ+漢字
+        ]
+
+        for pattern in patterns:
+            for match in re.finditer(pattern, text):
+                term = match.group()
+                if self.min_term_length <= len(term) <= self.max_term_length:
+                    candidates[term] += 1
+
+        # 見出しから抽出した用語を追加
+        heading_terms = self.extract_headings(text)
+        for term in heading_terms:
+            if term not in candidates:
+                candidates[term] = 1
+            candidates[term] += 2  # 見出しボーナス
+
+        # 条件付きフィルタリング
+        filtered_candidates = {}
+        for term, freq in candidates.items():
+            if freq >= 2:  # 通常の頻度条件
+                filtered_candidates[term] = freq
+            elif freq == 1 and (term in heading_terms or self._is_likely_technical_term(term)):
+                # 頻度1でも見出しの用語または技術用語らしければ残す
+                filtered_candidates[term] = freq
+
+        return filtered_candidates
+
+    def _calculate_tfidf(self, text: str, terms: List[str]) -> Dict[str, float]:
+        """日本語対応のTF-IDF計算"""
+        if not terms or not text:
+            return {term: 0.0 for term in terms}
+
+        # 各用語の出現頻度を計算
+        doc_length = len(text)
+        term_frequencies = {}
+
+        for term in terms:
+            count = text.count(term)
+            term_frequencies[term] = count
+
+        # 文書頻度（DF）を計算（簡易版：全文書を文単位で分割）
+        sentences = text.replace('\n', '。').split('。')
+        sentences = [s for s in sentences if s.strip()]
+
+        if not sentences:
+            # 文に分割できない場合は全体を１文書として扱う
+            sentences = [text]
+
+        doc_frequencies = {}
+        for term in terms:
+            doc_count = sum(1 for sent in sentences if term in sent)
+            doc_frequencies[term] = max(doc_count, 1)  # ゼロ除算防止
+
+        # TF-IDF計算
+        tfidf_scores = {}
+        total_docs = len(sentences)
+
+        for term in terms:
+            # TFにスムージングを追加（Laplace smoothing）
+            tf = (term_frequencies[term] + 0.5) / (doc_length + 1.0)  # Term Frequency with smoothing
+            # IDFの最小値を保証
+            idf = max(0.1, math.log((total_docs + 1) / (doc_frequencies[term] + 1)) + 1)
+            tfidf_scores[term] = tf * idf
+
+        # スコアがすべて0の場合は頻度ベースにフォールバック
+        if all(v == 0 for v in tfidf_scores.values()):
+            for term in terms:
+                tfidf_scores[term] = term_frequencies[term] / max(sum(term_frequencies.values()), 1)
+
+        print(f"[DEBUG] TF-IDF計算結果: 非ゼロ項目={sum(1 for v in tfidf_scores.values() if v > 0)}/{len(terms)}")
+        if tfidf_scores:
+            print(f"[DEBUG] TF-IDF範囲: {min(tfidf_scores.values()):.6f} ~ {max(tfidf_scores.values()):.6f}")
+
+        return tfidf_scores
+
+    def _normalize_scores(self, scores: Dict[str, float]) -> Dict[str, float]:
+        """スコアを正規化（最小値を0.01に設定して0を回避）"""
+        if not scores:
+            return {}
+
+        values = list(scores.values())
+        min_score = min(values)
+        max_score = max(values)
+
+        if max_score == min_score:
+            return {k: 0.5 for k in scores}  # 全て同じ値の場合
+
+        # 最小値を0.01にして、完全な0を回避
+        normalized = {}
+        for k, v in scores.items():
+            norm_value = (v - min_score) / (max_score - min_score)
+            # 0.01～1.0の範囲にスケーリング
+            normalized[k] = 0.01 + norm_value * 0.99
+
+        return normalized
+
+    def _compute_embeddings(self, texts: List[str]) -> np.ndarray:
+        """テキストの埋め込みベクトルを生成（統合版）"""
+        if self.use_cache:
+            cache_file = self.cache_dir / f"embeddings_{hashlib.md5(str(texts).encode()).hexdigest()}.pkl"
+            if cache_file.exists():
+                with open(cache_file, 'rb') as f:
+                    return pickle.load(f)
+
+        # Azure OpenAI Embeddingsを使用
+        if self.use_azure_openai and hasattr(self, 'azure_embeddings'):
+            try:
+                embeddings = self.azure_embeddings.embed_documents(texts)
+                embeddings = np.array(embeddings)
+            except Exception as e:
+                logger.warning(f"Azure Embeddings failed: {e}. Falling back to sentence-transformers")
+                # フォールバックでsentence-transformersを使用
+                if not hasattr(self, 'embedder'):
+                    self.embedder = SentenceTransformer(self.embedding_model)
+                embeddings = self.embedder.encode(texts, show_progress_bar=False)
+        else:
+            # sentence-transformersを使用
+            if not hasattr(self, 'embedder'):
+                self.embedder = SentenceTransformer(self.embedding_model)
+            embeddings = self.embedder.encode(terms, show_progress_bar=False)
+
+        # キャッシュに保存
+        if self.use_cache:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(embeddings, f)
+
+        return embeddings
+
+    def _build_knn_graph(self, terms: List[Term], embeddings: np.ndarray) -> nx.Graph:
+        """用語間のkNNグラフを構築"""
+        n_terms = len(terms)
+        if n_terms < 2:
+            return nx.Graph()
+
+        # k近傍探索
+        k = min(self.k_neighbors, n_terms - 1)
+        nbrs = NearestNeighbors(n_neighbors=k + 1, metric='cosine')
+        nbrs.fit(embeddings)
+
+        distances, indices = nbrs.kneighbors(embeddings)
+
+        # グラフ構築
+        graph = nx.Graph()
+
+        # ノード追加
+        for i, term in enumerate(terms):
+            graph.add_node(term.term, index=i, score=term.score)
+
+        # エッジ追加
+        for i in range(n_terms):
+            for j, dist in zip(indices[i][1:], distances[i][1:]):  # 自分自身を除外
+                similarity = 1.0 - dist  # コサイン距離から類似度へ
+                if similarity >= self.sim_threshold:
+                    graph.add_edge(
+                        terms[i].term,
+                        terms[j].term,
+                        weight=float(similarity)
+                    )
+
+        return graph
+
+    def _personalized_pagerank(self, graph: nx.Graph, terms: List[Term]) -> Dict[str, float]:
+        """Personalized PageRank計算（正しいSemRe-Rank実装）"""
+        if len(graph) == 0:
+            return {}
+
+        # base_scoreを初期重みとして設定
+        personalization = {}
+        for term in terms:
+            if term.term in graph:
+                # base_scoreのgamma乗を初期重みとする
+                personalization[term.term] = max(term.score, 0.01) ** self.gamma
+
+        # 正規化
+        total = sum(personalization.values())
+        if total > 0:
+            personalization = {k: v/total for k, v in personalization.items()}
+        else:
+            # フォールバック：均等な重み
+            personalization = {node: 1.0/len(graph) for node in graph.nodes()}
+
+        # PageRankを一度だけ実行
+        try:
+            pagerank_scores = nx.pagerank(
+                graph,
+                alpha=self.alpha,
+                personalization=personalization,
+                max_iter=100,
+                weight='weight',
+                tol=1e-6
+            )
+        except:
+            # エラー時のフォールバック
+            pagerank_scores = {node: 1.0 / len(graph) for node in graph.nodes()}
+
+        return pagerank_scores
+
+    def _fuse_scores(self, terms: List[Term], pagerank_scores: Dict[str, float]) -> List[Term]:
+        """スコアを統合"""
+        # PageRankスコアを0.1～0.9の範囲に正規化（極端な値を避ける）
+        if pagerank_scores:
+            values = list(pagerank_scores.values())
+            min_pr = min(values)
+            max_pr = max(values)
+
+            if max_pr > min_pr:
+                # 0.1～0.9の範囲にマッピング
+                pr_normalized = {
+                    k: 0.1 + (v - min_pr) / (max_pr - min_pr) * 0.8
+                    for k, v in pagerank_scores.items()
+                }
+            else:
+                pr_normalized = {k: 0.5 for k in pagerank_scores}
+        else:
+            pr_normalized = {}
+
+        for term in terms:
+            # PageRankスコア取得（デフォルト0.5）
+            pr_score = pr_normalized.get(term.term, 0.5)
+
+            # スコア統合（TF-IDF + C-value + PageRank）
+            term.score = term.score * (1.0 - self.w_pagerank) + pr_score * self.w_pagerank
+
+            # PageRankスコアをメタデータに追加（表示用）
+            term.metadata['pagerank'] = pr_score
+
+        # 再度スコアでソート
+        terms.sort(key=lambda x: x.score, reverse=True)
+        return terms
+
+    def _apply_cooccurrence_weight(self, graph: nx.Graph, text: str):
+        """共起関係に基づくエッジ重みの調整"""
+        sentences = text.replace('\n', '。').split('。')
+        cooccur_counts = defaultdict(int)
+        terms = list(graph.nodes())
+
+        for sent in sentences:
+            present_terms = []
+            for term in terms:
+                if term in sent:
+                    present_terms.append(term)
+
+            for t1, t2 in itertools.combinations(present_terms, 2):
+                key = tuple(sorted([t1, t2]))
+                cooccur_counts[key] += 1
+
+        # エッジ重みを更新
+        for u, v, data in graph.edges(data=True):
+            key = tuple(sorted([u, v]))
+            cooccur = cooccur_counts.get(key, 0)
+
+            if cooccur > 0:
+                factor = 1.0 + self.beta * np.log1p(cooccur)
+                data['weight'] = float(data['weight'] * factor)
+
+    def _extract_contexts(self, text: str, term: str, window_size: int = 50) -> List[str]:
+        """用語の出現文脈を抽出"""
+        contexts = []
+        indices = [m.start() for m in re.finditer(re.escape(term), text)]
+
+        for idx in indices[:3]:  # 最大3つの文脈
+            start = max(0, idx - window_size)
+            end = min(len(text), idx + len(term) + window_size)
+            context = text[start:end]
+            contexts.append(context)
+
+        return contexts
+
+    def _determine_validation_count_by_distribution(self, terms: List[Term]) -> int:
+        """エルボー法でスコアの急激な変化点を検出して検証数を決定"""
+        if not terms or len(terms) < 3:
+            return len(terms) if terms else 0
+
+        scores = [t.score for t in terms]
+
+        # 方法1: エルボー法（スコア差分の変化率）
+        score_diffs = []
+        for i in range(1, len(scores)):
+            diff = scores[i-1] - scores[i]
+            score_diffs.append(diff)
+
+        # 2階差分で変化率の変化を検出
+        if len(score_diffs) > 1:
+            second_diffs = []
+            for i in range(1, len(score_diffs)):
+                second_diff = score_diffs[i] - score_diffs[i-1]
+                second_diffs.append(second_diff)
+
+            # エルボーポイントを検出（最大の2階差分）
+            if second_diffs:
+                elbow_index = np.argmax(second_diffs) + 2
+                elbow_count = min(len(terms), max(10, min(elbow_index, 100)))  # 10～100件の範囲
+
+                console.print(f"    [dim]エルボー検出: {elbow_count}件目[/dim]")
+
+        # 方法2: 累積寄与率による判定（85%まで）
+        cumsum = np.cumsum(scores)
+        if cumsum[-1] > 0:
+            cumsum_normalized = cumsum / cumsum[-1]
+            # 累積寄与率が85%に達する点
+            threshold_index = np.argmax(cumsum_normalized >= 0.85) + 1
+            contribution_count = min(len(terms), max(10, min(threshold_index, 100)))
+
+            console.print(f"    [dim]累積寄与率85%: {contribution_count}件目[/dim]")
+        else:
+            contribution_count = min(30, len(terms))
+
+        # 両方の方法の平均を取る
+        if 'elbow_count' in locals() and 'contribution_count' in locals():
+            final_count = int((elbow_count + contribution_count) / 2)
+        elif 'elbow_count' in locals():
+            final_count = elbow_count
+        elif 'contribution_count' in locals():
+            final_count = contribution_count
+        else:
+            final_count = min(30, len(terms))  # フォールバック
+
+        final_count = min(final_count, len(terms))
+        console.print(f"    [cyan]最終検証数: {final_count}件[/cyan]")
+        return final_count
+
+    async def _validate_with_llm(self, terms: List[Term], text: str) -> List[Term]:
+        """基本のLLM検証（Azure以外）"""
+        # Azure LLM検証へフォールバック
+        return await self._validate_with_azure_llm(terms, text)
+
+    async def extract_terms_with_validation(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """
+        PDFファイルから専門用語を抽出し、LLM検証を行う
+
+        Args:
+            pdf_path: PDFファイルパス
+
+        Returns:
+            抽出された専門用語のリスト
+        """
+        # PDFからテキストを抽出
+        if PYMUPDF_AVAILABLE:
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+        else:
+            # フォールバック：テキストファイルとして読み込み
+            with open(pdf_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text = f.read()
+
+        # テキストから用語抽出
+        terms = await self.extract_terms_from_text(text)
+
+        # 結果を辞書形式に変換
+        results = []
+        for i, term in enumerate(terms):
+            # 最初の5件のデバッグ出力
+            if i < 5:
+                if i == 0:
+                    print("\n[DEBUG] 最終スコアサンプル（最初の5件）:")
+                print(f"  {i+1}. {term.term}:")
+                print(f"    総合スコア: {term.score:.3f}")
+                print(f"    TF-IDF: {term.metadata.get('tfidf', 0.0):.3f}")
+                print(f"    C-value: {term.metadata.get('cvalue', 0.0):.3f}")
+                print(f"    PageRank: {term.metadata.get('pagerank', 0.0):.3f}")
+                print(f"    頻度: {term.metadata.get('frequency', 0)}")
+
+            results.append({
+                'term': term.term,
+                'score': term.score,
+                'frequency': term.metadata.get('frequency', 0),
+                'definition': term.definition,
+                'c_value': term.metadata.get('cvalue', 0.0),
+                'tfidf': term.metadata.get('tfidf', 0.0),
+                'pagerank': term.metadata.get('pagerank', 0.0),
+                'synonyms': term.metadata.get('synonyms', [])
+            })
+
+        return results
+
+    def _extract_candidates(self, text: str) -> Dict[str, int]:
+        """基本的な候補抽出（SudachiPy代替）"""
+        candidates = defaultdict(int)
+
+        # 正規表現パターンで日本語の複合語を抽出
+        patterns = [
+            r'[ァ-ヶー]+',  # カタカナ
+            r'[一-龯]{2,}',  # 漢字（2文字以上）
+            r'[A-Z][A-Za-z0-9]*',  # 英数字
+            r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+',  # カタカナ+漢字
+        ]
+
+        for pattern in patterns:
+            for match in re.finditer(pattern, text):
+                term = match.group()
+                if self.min_term_length <= len(term) <= self.max_term_length:
+                    candidates[term] += 1
+
+        # 見出しから抽出した用語を追加
+        heading_terms = self.extract_headings(text)
+        for term in heading_terms:
+            if term not in candidates:
+                candidates[term] = 1
+            candidates[term] += 2  # 見出しボーナス
+
+        # 条件付きフィルタリング
+        filtered_candidates = {}
+        for term, freq in candidates.items():
+            if freq >= 2:
+                filtered_candidates[term] = freq
+            elif freq == 1 and (term in heading_terms or self._is_likely_technical_term(term)):
+                filtered_candidates[term] = freq
+
+        return filtered_candidates
+
+    # 重複した古い実装を削除
 
     async def search_similar_contexts(self, query_text: str, n_results: int = 3) -> str:
         """RAGベクトルストアから類似文脈を取得"""
@@ -310,6 +794,7 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         """SudachiPyを使った候補語抽出"""
         if not SUDACHI_AVAILABLE:
             # フォールバック: 親クラスのメソッドを使用
+            # 代替実装を使用
             return self._extract_candidates(text)
 
         candidates = defaultdict(int)
@@ -346,42 +831,25 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
             if self.min_term_length <= len(phrase) <= self.max_term_length:
                 candidates[phrase] += 1
 
-        return dict(candidates)
+        # 見出しから抽出した用語を追加
+        heading_terms = self.extract_headings(text)
+        for term in heading_terms:
+            if term not in candidates:
+                candidates[term] = 1  # 見出しの用語は最低でも頻度1
+            # 見出しの用語には追加ボーナス
+            candidates[term] += 2
 
-    def calculate_enhanced_scores(self, candidates: Dict[str, int], text: str) -> Dict[str, float]:
-        """拡張版スコア計算（C-value、分布、位置、共起）"""
-        scores = {}
-        doc_length = len(text)
+        # 条件付きフィルタリング（頻度1でも重要な用語は残す）
+        filtered_candidates = {}
+        for term, freq in candidates.items():
+            if freq >= 2:  # 通常の頻度条件
+                filtered_candidates[term] = freq
+            elif freq == 1 and (term in heading_terms or self._is_likely_technical_term(term)):
+                # 頻度1でも見出しの用語または技術用語らしければ残す
+                filtered_candidates[term] = freq
 
-        # C-value計算
-        c_values = self._calculate_advanced_cvalue(candidates)
+        return filtered_candidates
 
-        for candidate, freq in candidates.items():
-            # 出現位置を収集
-            positions = []
-            start = 0
-            while True:
-                pos = text.find(candidate, start)
-                if pos == -1:
-                    break
-                positions.append(pos)
-                start = pos + 1
-
-            # 各種スコア計算
-            c_value = c_values.get(candidate, 0.0)
-            distribution_score = self._calculate_distribution_score(positions, doc_length)
-            position_score = self._calculate_position_score(positions[0] if positions else doc_length, doc_length)
-            domain_score = self._calculate_domain_score(candidate)
-
-            # 統合スコア
-            scores[candidate] = (
-                c_value * 0.4 +
-                distribution_score * 0.2 +
-                position_score * 0.1 +
-                domain_score * 0.3
-            )
-
-        return scores
 
     def _calculate_advanced_cvalue(self, candidates: Dict[str, int]) -> Dict[str, float]:
         """改良版C-value計算"""
@@ -408,32 +876,6 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 
         return c_values
 
-    def _calculate_distribution_score(self, positions: List[int], doc_length: int) -> float:
-        """文書内分布スコア"""
-        if len(positions) <= 1:
-            return 0.5
-
-        mean_pos = sum(positions) / len(positions)
-        variance = sum((p - mean_pos) ** 2 for p in positions) / len(positions)
-        std_dev = math.sqrt(variance)
-
-        ideal_gap = doc_length / (len(positions) + 1)
-        distribution_score = 1.0 / (1.0 + std_dev / (ideal_gap + 1))
-
-        return distribution_score
-
-    def _calculate_position_score(self, first_pos: int, doc_length: int) -> float:
-        """初出位置スコア"""
-        return 1.0 - (first_pos / doc_length) * 0.5
-
-    def _calculate_domain_score(self, candidate: str) -> float:
-        """ドメイン関連スコア"""
-        score = 0.0
-        for domain, keywords in self.domain_keywords.items():
-            for keyword in keywords:
-                if keyword in candidate:
-                    score += 0.1
-        return min(score, 1.0)
 
     async def extract_terms_from_text(
         self,
@@ -462,17 +904,22 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         console.print(f"    [dim]候補数: {len(candidates)}[/dim]")
 
         # 2. 拡張スコア計算
-        console.print("  [yellow]2. 拡張スコア計算[/yellow]")
-        enhanced_scores = self.calculate_enhanced_scores(candidates, text)
-
-        # 3. TF-IDFとC-valueを計算（親クラスのメソッド）
+        console.print("  [yellow]2. TF-IDFとC-value計算[/yellow]")
+        # TF-IDFとC-valueを計算
         tfidf_scores = self._calculate_tfidf(text, list(candidates.keys()))
-        cvalue_scores = self._calculate_cvalue(candidates)
+        cvalue_scores = self._calculate_advanced_cvalue(candidates)
 
         # スコアを正規化
+        print(f"[DEBUG] TF-IDFスコアサンプル（最初の5件）:")
+        for term in list(tfidf_scores.keys())[:5]:
+            print(f"  {term}: {tfidf_scores[term]:.6f}")
+
         tfidf_normalized = self._normalize_scores(tfidf_scores)
         cvalue_normalized = self._normalize_scores(cvalue_scores)
-        enhanced_normalized = self._normalize_scores(enhanced_scores)
+
+        print(f"[DEBUG] 正規化後TF-IDFサンプル（最初の5件）:")
+        for term in list(tfidf_normalized.keys())[:5]:
+            print(f"  {term}: {tfidf_normalized[term]:.6f}")
 
         # 4. Termオブジェクト作成
         terms = []
@@ -480,11 +927,10 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
             if frequency < self.min_frequency:
                 continue
 
-            # 統合スコア
+            # 統合スコア（TF-IDFとC-valueのみ）
             tfidf = tfidf_normalized.get(term, 0.0)
             cvalue = cvalue_normalized.get(term, 0.0)
-            enhanced = enhanced_normalized.get(term, 0.0)
-            base_score = (tfidf * 0.2 + cvalue * 0.3 + enhanced * 0.5)
+            base_score = (tfidf * 0.4 + cvalue * 0.6)
 
             # ストップワードチェック
             if term in self.stopwords_extended:
@@ -492,15 +938,14 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 
             terms.append(Term(
                 term=term,
-                definition="",
                 score=base_score,
-                frequency=frequency,
-                contexts=self._extract_contexts(text, term),
+                definition="",
                 metadata={
                     "tfidf": tfidf,
                     "cvalue": cvalue,
-                    "enhanced": enhanced,
-                    "base_score": base_score
+                    "base_score": base_score,
+                    "frequency": frequency,
+                    "contexts": self._extract_contexts(text, term)
                 }
             ))
 
@@ -521,9 +966,21 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         if len(terms) == 0:
             return []
 
-        # 7. 埋め込みを計算
-        console.print("  [yellow]4. 埋め込みを計算[/yellow]")
-        embeddings = self._compute_embeddings([t.term for t in terms])
+        # 7. 埋め込みを計算（用語＋文脈）
+        console.print("  [yellow]4. 埋め込みを計算（文脈付き）[/yellow]")
+        # 用語と文脈を結合してより精度の高い埋め込みを生成
+        texts = []
+        for t in terms:
+            contexts = t.metadata.get('contexts', [])
+            if contexts and contexts[0]:
+                # 最初の文脈の一部を追加（50文字まで）
+                context_snippet = contexts[0][:50]
+                text = f"{t.term} [SEP] {context_snippet}"
+            else:
+                text = t.term
+            texts.append(text)
+
+        embeddings = self._compute_embeddings(texts)
 
         # 8. kNNグラフを構築
         console.print("  [yellow]5. kNNグラフを構築[/yellow]")
@@ -548,26 +1005,42 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         # 12. 検証数を決定
         validation_count = self._determine_validation_count_by_distribution(terms)
 
-        # 13. LLM検証
-        if self.use_llm_validation and terms:
-            console.print(f"  [cyan]LLM検証対象: 上位{validation_count}件[/cyan]")
+        # 12.5. MMRで多様な候補を選択（新規追加）
+        if len(terms) > validation_count:
+            # embeddings変数は935-950行目で計算済み
+            terms_selected = self._mmr_select(
+                terms=terms,
+                embeddings=embeddings,  # 既に正規化済みの埋め込み
+                k=validation_count,
+                lambda_param=0.7,  # 関連性重視
+                use_embedding=True  # 埋め込みベース推奨
+            )
+            console.print(f"  [green]MMRで{len(terms)}件から多様な{len(terms_selected)}件を選択[/green]")
+        else:
+            terms_selected = terms[:validation_count]
+
+        # 13. LLM検証（MMR選択後の用語のみ）
+        if self.use_llm_validation and terms_selected:
+            console.print(f"  [cyan]LLM検証対象: {len(terms_selected)}件（MMR適用済み）[/cyan]")
             if self.use_azure_openai:
-                terms = await self._validate_with_azure_llm(terms[:validation_count], text)
+                terms_final = await self._validate_with_azure_llm(terms_selected, text)
             else:
-                terms = await self._validate_with_llm(terms[:validation_count], text)
-            console.print(f"  [yellow]LLM検証後の候補数: {len(terms)}[/yellow]")
+                terms_final = await self._validate_with_llm(terms_selected, text)
+            console.print(f"  [yellow]LLM検証後の最終候補数: {len(terms_final)}[/yellow]")
+        else:
+            terms_final = terms_selected
 
         # 14. データベース保存（オプション）
         if hasattr(self, 'db_engine'):
-            await self._save_to_database(terms)
+            await self._save_to_database(terms_final)
 
         # 最終結果
-        final_terms = terms[:min(validation_count, 50)]
+        final_terms = terms_final[:min(validation_count, 50)]
         console.print(f"  [green]最終的な専門用語数: {len(final_terms)}[/green]")
         return final_terms
 
     def _prefilter_terms_extended(self, terms: List[Term]) -> List[Term]:
-        """拡張版前処理フィルタ"""
+        """拡張版前処理フィルタ（包含関係フィルタを追加）"""
         filtered = []
 
         for term in terms:
@@ -594,6 +1067,21 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
                     pass
 
             filtered.append(term)
+
+        # 包含関係フィルタ：他の用語に含まれる単独語を減点
+        for term in filtered:
+            if len(term.term) <= 3:  # 短い用語のみチェック
+                # 他の長い用語に含まれているかチェック
+                is_contained = False
+                for other in filtered:
+                    if term.term != other.term and term.term in other.term and len(other.term) > len(term.term):
+                        is_contained = True
+                        break
+
+                if is_contained:
+                    # 包含されている場合、スコアを減点（削除ではなく減点）
+                    term.score *= 0.3
+                    term.metadata['contained'] = True
 
         return filtered
 
@@ -662,8 +1150,14 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 2. 定義の必要性：一般人には説明が必要
 3. 専門的価値：その分野で重要な意味を持つ
 
+【出力内容】
+各専門用語について：
+- headword: 専門用語の見出し語
+- synonyms: 類義語、略語、別名のリスト（文脈から推測できるもの、一般的に知られているもの）
+- definition: 30-50字程度の簡潔な定義
+
 {format_instructions}"""),
-            ("user", """以下の候補から専門用語を選定してください：
+            ("user", """以下の候補から専門用語を選定し、類義語も含めて抽出してください：
 
 文脈:
 {text}
@@ -671,7 +1165,8 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 候補リスト:
 {candidates}
 
-各候補について判定し、JSON形式で出力してください。""")
+各候補について判定し、類義語や略語も抽出してJSON形式で出力してください。
+例えば「アンモニア燃料」の場合、「NH3燃料」「アンモニア系燃料」などが類義語になります。""")
         ]).partial(format_instructions=json_parser.get_format_instructions())
 
         # チェイン構築（LCEL）
@@ -680,7 +1175,7 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
         try:
             # 候補を文字列化
             candidates_str = "\n".join([
-                f"- {t.term} (頻度: {t.frequency}, スコア: {t.score:.3f})"
+                f"- {t.term} (頻度: {t.metadata.get('frequency', 0)}, スコア: {t.score:.3f})"
                 for t in terms
             ])
 
@@ -692,15 +1187,33 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 
             # 結果をTermオブジェクトに変換
             validated_terms = []
-            validated_set = {t.headword for t in result.terms}
+
+            # resultが辞書の場合と、オブジェクトの場合の両方に対応
+            if isinstance(result, dict):
+                # 辞書形式の場合
+                terms_list = result.get('terms', [])
+            else:
+                # Pydanticオブジェクトの場合
+                terms_list = result.terms if hasattr(result, 'terms') else []
+
+            validated_set = {t.get('headword', t['headword']) if isinstance(t, dict) else t.headword for t in terms_list}
 
             for term in terms:
                 if term.term in validated_set:
                     # メタデータ更新
-                    for t in result.terms:
-                        if t.headword == term.term:
-                            term.definition = t.definition
-                            term.metadata["synonyms"] = t.synonyms
+                    for t in terms_list:
+                        if isinstance(t, dict):
+                            headword = t.get('headword', '')
+                            definition = t.get('definition', '')
+                            synonyms = t.get('synonyms', [])
+                        else:
+                            headword = t.headword
+                            definition = t.definition if hasattr(t, 'definition') else ''
+                            synonyms = t.synonyms if hasattr(t, 'synonyms') else []
+
+                        if headword == term.term:
+                            term.definition = definition
+                            term.metadata["synonyms"] = synonyms if synonyms else []
                             break
                     validated_terms.append(term)
 
@@ -766,6 +1279,351 @@ class EnhancedTermExtractorV3(StatisticalTermExtractorV2):
 
         except Exception as e:
             logger.error(f"DB保存エラー: {e}")
+
+    def _compute_embeddings(self, texts: List[str]) -> np.ndarray:
+        """テキストの埋め込みベクトルを生成（統合版）"""
+        if self.use_cache:
+            cache_file = self.cache_dir / f"embeddings_{hashlib.md5(str(texts).encode()).hexdigest()}.pkl"
+            if cache_file.exists():
+                with open(cache_file, 'rb') as f:
+                    return pickle.load(f)
+
+        # Azure OpenAI Embeddingsを使用
+        if self.use_azure_openai and hasattr(self, 'azure_embeddings'):
+            try:
+                embeddings = self.azure_embeddings.embed_documents(texts)
+                embeddings = np.array(embeddings)
+            except Exception as e:
+                logger.warning(f"Azure Embeddings failed: {e}. Falling back to sentence-transformers")
+                # フォールバックでsentence-transformersを使用
+                if not hasattr(self, 'embedder'):
+                    self.embedder = SentenceTransformer(self.embedding_model)
+                embeddings = self.embedder.encode(texts, show_progress_bar=False)
+        else:
+            # sentence-transformersを使用
+            if not hasattr(self, 'embedder'):
+                self.embedder = SentenceTransformer(self.embedding_model)
+            embeddings = self.embedder.encode(terms, show_progress_bar=False)
+
+        # キャッシュに保存
+        if self.use_cache:
+            with open(cache_file, 'wb') as f:
+                pickle.dump(embeddings, f)
+
+        return embeddings
+
+    def _build_knn_graph(self, terms: List[Term], embeddings: np.ndarray) -> nx.Graph:
+        """用語間のkNNグラフを構築"""
+        n_terms = len(terms)
+        if n_terms < 2:
+            return nx.Graph()
+
+        # k近傍探索
+        k = min(self.k_neighbors, n_terms - 1)
+        nbrs = NearestNeighbors(n_neighbors=k + 1, metric='cosine')
+        nbrs.fit(embeddings)
+
+        distances, indices = nbrs.kneighbors(embeddings)
+
+        # グラフ構築
+        graph = nx.Graph()
+
+        # ノード追加
+        for i, term in enumerate(terms):
+            graph.add_node(term.term, index=i, score=term.score)
+
+        # エッジ追加
+        for i in range(n_terms):
+            for j, dist in zip(indices[i][1:], distances[i][1:]):  # 自分自身を除外
+                similarity = 1.0 - dist  # コサイン距離から類似度へ
+                if similarity >= self.sim_threshold:
+                    graph.add_edge(
+                        terms[i].term,
+                        terms[j].term,
+                        weight=float(similarity)
+                    )
+
+        return graph
+
+    def _personalized_pagerank(self, graph: nx.Graph, terms: List[Term]) -> Dict[str, float]:
+        """Personalized PageRank計算（正しいSemRe-Rank実装）"""
+        if len(graph) == 0:
+            return {}
+
+        # base_scoreを初期重みとして設定
+        personalization = {}
+        for term in terms:
+            if term.term in graph:
+                # base_scoreのgamma乗を初期重みとする
+                personalization[term.term] = max(term.score, 0.01) ** self.gamma
+
+        # 正規化
+        total = sum(personalization.values())
+        if total > 0:
+            personalization = {k: v/total for k, v in personalization.items()}
+        else:
+            # フォールバック：均等な重み
+            personalization = {node: 1.0/len(graph) for node in graph.nodes()}
+
+        # PageRankを一度だけ実行
+        try:
+            pagerank_scores = nx.pagerank(
+                graph,
+                alpha=self.alpha,
+                personalization=personalization,
+                max_iter=100,
+                weight='weight',
+                tol=1e-6
+            )
+        except:
+            # エラー時のフォールバック
+            pagerank_scores = {node: 1.0 / len(graph) for node in graph.nodes()}
+
+        return pagerank_scores
+
+    def _fuse_scores(self, terms: List[Term], pagerank_scores: Dict[str, float]) -> List[Term]:
+        """スコアを統合"""
+        # PageRankスコアを0.1～0.9の範囲に正規化（極端な値を避ける）
+        if pagerank_scores:
+            values = list(pagerank_scores.values())
+            min_pr = min(values)
+            max_pr = max(values)
+
+            if max_pr > min_pr:
+                # 0.1～0.9の範囲にマッピング
+                pr_normalized = {
+                    k: 0.1 + (v - min_pr) / (max_pr - min_pr) * 0.8
+                    for k, v in pagerank_scores.items()
+                }
+            else:
+                pr_normalized = {k: 0.5 for k in pagerank_scores}
+        else:
+            pr_normalized = {}
+
+        for term in terms:
+            # PageRankスコア取得（デフォルト0.5）
+            pr_score = pr_normalized.get(term.term, 0.5)
+
+            # スコア統合（TF-IDF + C-value + PageRank）
+            term.score = term.score * (1.0 - self.w_pagerank) + pr_score * self.w_pagerank
+
+            # PageRankスコアをメタデータに追加（表示用）
+            term.metadata['pagerank'] = pr_score
+
+        # 再度スコアでソート
+        terms.sort(key=lambda x: x.score, reverse=True)
+        return terms
+
+    def _apply_cooccurrence_weight(self, graph: nx.Graph, text: str):
+        """共起関係に基づくエッジ重みの調整"""
+        sentences = text.replace('\n', '。').split('。')
+        cooccur_counts = defaultdict(int)
+        terms = list(graph.nodes())
+
+        for sent in sentences:
+            present_terms = []
+            for term in terms:
+                if term in sent:
+                    present_terms.append(term)
+
+            for t1, t2 in itertools.combinations(present_terms, 2):
+                key = tuple(sorted([t1, t2]))
+                cooccur_counts[key] += 1
+
+        # エッジ重みを更新
+        for u, v, data in graph.edges(data=True):
+            key = tuple(sorted([u, v]))
+            cooccur = cooccur_counts.get(key, 0)
+
+            if cooccur > 0:
+                factor = 1.0 + self.beta * np.log1p(cooccur)
+                data['weight'] = float(data['weight'] * factor)
+
+    def _extract_contexts(self, text: str, term: str, window_size: int = 50) -> List[str]:
+        """用語の出現文脈を抽出"""
+        contexts = []
+        indices = [m.start() for m in re.finditer(re.escape(term), text)]
+
+        for idx in indices[:3]:  # 最大3つの文脈
+            start = max(0, idx - window_size)
+            end = min(len(text), idx + len(term) + window_size)
+            context = text[start:end]
+            contexts.append(context)
+
+        return contexts
+
+    def _compute_jaccard_similarity(self, term1: str, term2: str, n: int = 2) -> float:
+        """
+        n-gramベースのJaccard係数を計算
+
+        Args:
+            term1, term2: 比較する用語
+            n: n-gramのn（デフォルト2=bigram）
+
+        Returns:
+            類似度（0-1）
+        """
+        if len(term1) < n or len(term2) < n:
+            return 1.0 if term1 == term2 else 0.0
+
+        # n-gram生成
+        ngrams1 = {term1[i:i+n] for i in range(len(term1)-n+1)}
+        ngrams2 = {term2[i:i+n] for i in range(len(term2)-n+1)}
+
+        # Jaccard係数
+        if not ngrams1 or not ngrams2:
+            return 0.0
+        intersection = len(ngrams1 & ngrams2)
+        union = len(ngrams1 | ngrams2)
+        return intersection / union if union > 0 else 0.0
+
+    def _mmr_select(
+        self,
+        terms: List[Term],
+        embeddings: Optional[np.ndarray],
+        k: int,
+        lambda_param: float = 0.7,
+        use_embedding: bool = True
+    ) -> List[Term]:
+        """
+        Maximal Marginal Relevanceによる多様性を考慮した選択
+
+        Args:
+            terms: 候補用語リスト（スコア順）
+            embeddings: 埋め込みベクトル（既に計算済みを再利用）
+            k: 選択数（エルボー法で決定済み）
+            lambda_param: 関連性と多様性のバランス（0.7=関連性重視）
+            use_embedding: True=埋め込み類似度、False=文字列類似度
+
+        Returns:
+            多様性を持つk個の用語
+        """
+        if len(terms) <= k:
+            return terms
+
+        selected = []
+        selected_indices = []
+        remaining = list(range(len(terms)))
+
+        # 最初は最高スコアを選択
+        selected.append(terms[0])
+        selected_indices.append(0)
+        remaining.remove(0)
+
+        # 残りをMMRで選択
+        while len(selected) < k and remaining:
+            best_mmr = -float('inf')
+            best_idx = -1
+
+            for idx in remaining:
+                # 関連性スコア（正規化済み）
+                relevance = terms[idx].score
+
+                # 既選択との最大類似度
+                max_sim = 0.0
+                for sel_idx in selected_indices:
+                    if use_embedding and embeddings is not None:
+                        # 埋め込みベースの類似度（コサイン）
+                        sim = float(np.dot(embeddings[idx], embeddings[sel_idx]))
+                    else:
+                        # 文字列ベースの類似度（Jaccard）
+                        sim = self._compute_jaccard_similarity(
+                            terms[idx].term,
+                            terms[sel_idx].term
+                        )
+                    max_sim = max(max_sim, sim)
+
+                # MMRスコア計算
+                mmr = lambda_param * relevance - (1 - lambda_param) * max_sim
+
+                if mmr > best_mmr:
+                    best_mmr = mmr
+                    best_idx = idx
+
+            if best_idx >= 0:
+                selected.append(terms[best_idx])
+                selected_indices.append(best_idx)
+                remaining.remove(best_idx)
+
+        return selected
+
+    async def _validate_with_llm(self, terms: List[Term], text: str) -> List[Term]:
+        """基本のLLM検証（Azure以外）"""
+        # Azure LLM検証へフォールバック
+        return await self._validate_with_azure_llm(terms, text)
+
+    async def extract_terms_with_validation(self, pdf_path: str) -> List[Dict[str, Any]]:
+        """
+        PDFファイルから専門用語を抽出し、LLM検証を行う
+
+        Args:
+            pdf_path: PDFファイルパス
+
+        Returns:
+            抽出された専門用語のリスト
+        """
+        # PDFからテキストを抽出
+        if PYMUPDF_AVAILABLE:
+            doc = fitz.open(pdf_path)
+            text = ""
+            for page in doc:
+                text += page.get_text()
+            doc.close()
+        else:
+            # フォールバック：テキストファイルとして読み込み
+            with open(pdf_path, 'r', encoding='utf-8', errors='ignore') as f:
+                text = f.read()
+
+        # テキストから用語抽出
+        terms = await self.extract_terms_from_text(text)
+
+        # 結果を辞書形式に変換
+        results = []
+        for i, term in enumerate(terms):
+            # 最初の5件のデバッグ出力
+            if i < 5:
+                if i == 0:
+                    print("\n[DEBUG] 最終スコアサンプル（最初の5件）:")
+                print(f"  {i+1}. {term.term}:")
+                print(f"    総合スコア: {term.score:.3f}")
+                print(f"    TF-IDF: {term.metadata.get('tfidf', 0.0):.3f}")
+                print(f"    C-value: {term.metadata.get('cvalue', 0.0):.3f}")
+                print(f"    PageRank: {term.metadata.get('pagerank', 0.0):.3f}")
+                print(f"    頻度: {term.metadata.get('frequency', 0)}")
+
+            results.append({
+                'term': term.term,
+                'score': term.score,
+                'frequency': term.metadata.get('frequency', 0),
+                'definition': term.definition,
+                'c_value': term.metadata.get('cvalue', 0.0),
+                'tfidf': term.metadata.get('tfidf', 0.0),
+                'pagerank': term.metadata.get('pagerank', 0.0),
+                'synonyms': term.metadata.get('synonyms', [])
+            })
+
+        return results
+
+    def extract(self, text: str, **kwargs) -> List[Term]:
+        """
+        BaseExtractorの抽象メソッドの実装
+
+        Args:
+            text: 抽出対象テキスト
+            **kwargs: 追加パラメータ
+
+        Returns:
+            抽出された専門用語のList[Term]
+        """
+        # 同期的に非同期関数を実行
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            terms = loop.run_until_complete(self.extract_terms_from_text(text, metadata=kwargs))
+            return terms
+        finally:
+            loop.close()
 
 async def main():
     """メイン処理"""

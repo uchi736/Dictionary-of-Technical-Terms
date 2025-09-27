@@ -1,46 +1,46 @@
 # Dictionary of Technical Terms
-専門用語辞書自動構築システム
+専門用語辞書自動構築システム（SemRe-Rank + RAG定義生成）
 
 ## 概要
-PDFドキュメントから専門用語を自動抽出し、辞書を構築するシステムです。統計的手法と機械学習を組み合わせて、高精度な専門用語抽出を実現します。
+PDFドキュメントから専門用語を自動抽出し、RAGによる定義生成で辞書を構築するシステムです。
+SemRe-Rankアルゴリズムと最新のLangChain LCEL技術を組み合わせた高精度な専門用語処理システムです。
 
 ## 特徴
 - 📄 PDFからの自動テキスト抽出
-- 🔍 見出しやマークダウン形式の文書構造認識
-- 📊 統計的手法（TF-IDF、C-value）による重要度計算
-- 🧠 埋め込みベクトルとグラフベース手法（kNN + PageRank）
-- ✨ 頻度が低くても重要な専門用語を見逃さない条件付きフィルタリング
-- 🤖 Azure OpenAI/LLMによる専門用語検証（オプション）
+- 🔬 **SemRe-Rank**: 意味的関連性 + Personalized PageRankによる高精度抽出
+- 🤖 **RAG定義生成**: BM25 + ベクトル検索 + LLMによる自動定義付与
+- ⚡ **LCEL対応**: LangChain Expression Languageによる宣言的パイプライン
+- 🎯 エルボー法によるシード用語自動選択
+- 🔍 Azure OpenAI Embeddings (text-embedding-3-small) 対応
+- 📊 ハイブリッド検索（BM25 + pgvector）による高精度RAG
 
 ## システム構成
 
 ```
 dictionary_system/
-├── core/
-│   ├── extractors/
-│   │   ├── improved_extractor.py     # メイン抽出エンジン
-│   │   ├── statistical_extractor_v2.py # 統計的手法実装
-│   │   └── unified_extractor.py      # 統合抽出器
-│   ├── models/
-│   │   └── base_extractor.py        # 基底クラス
-│   └── utils/
-│       └── io/
-│           └── document_loader.py    # ドキュメント読み込み
 ├── config/
-│   └── rag_config.py                # 設定管理
-├── evaluation/
-│   └── unknown_term_evaluator.py    # 評価ツール
-├── interfaces/
-│   └── extraction_interface.py      # インターフェース
-└── docs/                            # ドキュメント
-
+│   ├── prompts.py                  # LLMプロンプト管理
+│   └── rag_config.py               # 環境設定
+├── core/
+│   ├── models/
+│   │   └── base_extractor.py      # Term, BaseExtractor
+│   ├── extractors/
+│   │   ├── semrerank_correct.py   # SemRe-Rank実装
+│   │   └── statistical_extractor_v2.py
+│   └── rag/
+│       ├── bm25_index.py           # BM25検索 + RRF
+│       ├── hybrid_search.py        # ハイブリッド検索チェーン
+│       ├── definition_enricher.py  # 定義付与統合
+│       └── extraction_pipeline.py  # LCEL パイプライン
+└── docs/                           # ドキュメント
 ```
 
 ## インストール
 
 ### 必要要件
 - Python 3.8以上
-- 仮想環境推奨
+- PostgreSQL + pgvector（RAG機能使用時）
+- Azure OpenAI アカウント（推奨）
 
 ### セットアップ
 ```bash
@@ -57,122 +57,219 @@ myenv\Scripts\activate  # Windows
 pip install -r requirements.txt
 ```
 
-### 主要な依存パッケージ
-- PyMuPDF (fitz): PDF処理
-- sentence-transformers: 埋め込みベクトル生成
-- scikit-learn: 機械学習アルゴリズム
-- networkx: グラフ処理
-- numpy, pandas: データ処理
-- rich: 進捗表示
+### 環境変数設定
+`.env`ファイルを作成：
+
+```bash
+# Azure OpenAI設定
+AZURE_OPENAI_ENDPOINT=https://your-endpoint.openai.azure.com
+AZURE_OPENAI_API_KEY=your_api_key
+AZURE_OPENAI_API_VERSION=2024-12-01-preview
+AZURE_OPENAI_CHAT_DEPLOYMENT_NAME=gpt-4o
+AZURE_OPENAI_EMBEDDING_DEPLOYMENT_NAME=text-embedding-3-small
+
+# PostgreSQL + pgvector設定（RAG機能使用時）
+DB_HOST=your_host
+DB_PORT=5432
+DB_NAME=postgres
+DB_USER=postgres
+DB_PASSWORD=your_password
+
+# LangSmith設定（オプション）
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=your_langsmith_key
+LANGCHAIN_PROJECT=term-extraction
+```
 
 ## 使用方法
 
-### 基本的な使用例
+### 1. 基本的な専門用語抽出（SemRe-Rank）
 
 ```python
-from dictionary_system.core.extractors.improved_extractor import ImprovedTermExtractor
+from dictionary_system.core.extractors.semrerank_correct import SemReRankExtractor
 
 # 抽出器の初期化
-extractor = ImprovedTermExtractor(
-    min_frequency=2,  # 最小出現頻度
-    min_term_length=2,  # 最小文字数
-    max_term_length=15  # 最大文字数
+extractor = SemReRankExtractor(
+    base_ate_method="tfidf",
+    use_azure_embeddings=True,
+    auto_select_seeds=True,
+    seed_z=50,
+    use_elbow_detection=True,
+    min_seed_count=5,
+    max_seed_ratio=0.7
 )
 
-# PDFから専門用語を抽出
-terms = extractor.extract_terms("path/to/your.pdf")
+# テキストから専門用語を抽出
+text = """
+アンモニア燃料エンジンは、次世代の環境対応技術として注目されている。
+このアンモニア燃料エンジンは、従来のディーゼルエンジンと比較して、
+CO2排出量を大幅に削減できる。
+"""
+
+terms = extractor.extract(text)
 
 # 結果の表示
-for term in terms[:20]:
-    print(f"{term['term']}: {term['score']:.3f}")
+for term in terms[:10]:
+    print(f"{term.term}: {term.score:.4f}")
 ```
 
-### 設定オプション
+### 2. 定義自動生成（RAG）
 
 ```python
-extractor = ImprovedTermExtractor(
-    min_frequency=1,      # 頻度閾値（1にすると見出しの用語も抽出）
-    k_neighbors=10,       # kNNグラフの近傍数
-    sim_threshold=0.35,   # 類似度閾値
-    alpha=0.85,          # PageRankのダンピングファクター
-    embedding_model="paraphrase-multilingual-MiniLM-L12-v2",  # 埋め込みモデル
-    use_cache=True       # キャッシュ使用
+from dictionary_system.core.rag import enrich_terms_with_definitions
+
+# 抽出した用語に定義を付与
+enriched_terms = enrich_terms_with_definitions(
+    terms=terms,
+    text=text,
+    top_n=5,
+    verbose=True
 )
+
+# 結果の表示
+for term in enriched_terms[:5]:
+    print(f"\n【{term.term}】")
+    print(f"スコア: {term.score:.4f}")
+    print(f"定義: {term.definition}")
+```
+
+### 3. エンドツーエンドパイプライン（LCEL）
+
+```python
+from dictionary_system.core.rag import create_extraction_pipeline
+
+# パイプラインの作成
+pipeline = create_extraction_pipeline(
+    enable_definitions=True,
+    top_n_terms=10
+)
+
+# テキストから用語抽出+定義生成を一気に実行
+result = pipeline.invoke(text)
+
+print(f"抽出された専門用語: {result['count']}件")
+for term in result['top_terms']:
+    print(f"\n【{term.term}】")
+    print(f"定義: {term.definition}")
+```
+
+### 4. バッチ処理
+
+```python
+# 複数テキストの並列処理
+texts = [text1, text2, text3]
+results = pipeline.batch(texts)
+
+# 非同期処理
+import asyncio
+results = await pipeline.abatch(texts)
 ```
 
 ## 主要機能の詳細
 
-### 1. 見出し検出機能
-マークダウン形式や番号付き見出しから専門用語を自動検出：
-- `#`, `##`, `###` などのマークダウン見出し
-- `1.`, `2.` などの番号付き見出し
-- `第1章`, `第一節` などの日本語見出し
+### SemRe-Rank アルゴリズム
+- **シード用語選択**: エルボー法による自動境界検出
+- **意味的関連性**: Azure埋め込み or SentenceTransformer
+- **Personalized PageRank**: シード用語を重視したグラフスコアリング
+- **文書レベル処理**: 文単位でグラフ構築→集約
 
-### 2. 条件付き頻度フィルタリング
-以下の条件を満たす用語は頻度1でも候補として残す：
-- 見出しに含まれる用語
-- カタカナ＋漢字の組み合わせ
-- 英数字を含む技術用語
-- 特定のサフィックス（システム、機関、方式など）
+### RAG定義生成
+- **ハイブリッド検索**: BM25（キーワード）+ ベクトル検索（意味）
+- **RRF統合**: Reciprocal Rank Fusion で検索結果を最適統合
+- **LLMプロンプト**: config/prompts.py で一元管理
+- **LCEL対応**: 宣言的なチェーン構築、バッチ処理高速化
 
-### 3. 統計的スコアリング
-- **TF-IDF**: 文書内での重要度
-- **C-value**: 複合語としての重要度
-- **PageRank**: 用語間の関係性による重要度
+### プロンプト管理
+```python
+from dictionary_system.config.prompts import PromptConfig
 
-## 環境変数
-
-`.env`ファイルで以下を設定可能：
-
-```bash
-# Azure OpenAI設定（オプション）
-AZURE_OPENAI_ENDPOINT=your_endpoint
-AZURE_OPENAI_API_KEY=your_api_key
-AZURE_OPENAI_DEPLOYMENT=your_deployment
-
-# LangSmith設定（オプション）
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_API_KEY=your_api_key
-LANGCHAIN_PROJECT=your_project
+# プロンプトのカスタマイズ
+config = PromptConfig()
+config.definition_system = "あなたは専門用語の定義作成の専門家です..."
 ```
 
-## 出力例
+## アーキテクチャ
 
+### データフロー
 ```
-抽出された専門用語（上位30件）
-┏━━━━┳━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━┳━━━━┳━━━━━━━━┳━━━━━━━━━━┓
-┃ 順位 ┃ 用語                  ┃ 総合スコア ┃ 頻度 ┃ C-value ┃ PageRank ┃
-┡━━━━╇━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━╇━━━━╇━━━━━━━━╇━━━━━━━━━━┫
-│  1  │ アンモニア燃料         │   0.892   │  57  │  68.78  │  0.0458  │
-│  2  │ エンジン              │   0.831   │  42  │  52.14  │  0.0392  │
-│  3  │ 燃料供給システム       │   0.756   │  23  │  41.23  │  0.0321  │
-└─────┴─────────────────────┴───────────┴──────┴─────────┴──────────┘
+テキスト
+  ↓
+前処理
+  ↓
+SemRe-Rank 抽出
+  ├─ 候補抽出（正規表現）
+  ├─ TF-IDF スコアリング
+  ├─ シード選択（エルボー法）
+  └─ Personalized PageRank
+  ↓
+用語リスト（Term[]）
+  ↓
+RAG 定義生成
+  ├─ BM25 検索
+  ├─ ベクトル検索（pgvector）
+  ├─ RRF 統合
+  └─ LLM 定義生成
+  ↓
+定義付き用語辞書
 ```
+
+### 依存関係
+```
+レイヤー0: base_extractor, rag_config, prompts
+レイヤー1: bm25_index
+レイヤー2: semrerank_correct
+レイヤー3: hybrid_search
+レイヤー4: definition_enricher
+レイヤー5: extraction_pipeline
+```
+
+## パフォーマンス
+
+- **バッチ処理**: LCEL の .batch() で並列化
+- **非同期処理**: .abatch() で高速化
+- **キャッシュ**: 埋め込みベクトルのキャッシュ対応
+- **ストリーミング**: .stream() で部分結果取得
 
 ## トラブルシューティング
 
-### 文字エンコーディングエラー
-Windows環境でUnicodeエラーが発生する場合：
-```python
-import sys
-sys.stdout.reconfigure(encoding='utf-8')
+### pgvector 接続エラー
+PostgreSQL + pgvector 拡張が必要です：
+```sql
+CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-### メモリ不足
-大きなPDFファイルの場合、バッチサイズを調整：
-```python
-embeddings = self.embedder.encode(terms, batch_size=16)  # デフォルト: 32
+### MeCab エラー
+BM25 で MeCab を使用する場合：
+```bash
+# Windows
+pip install mecab-python3
+# Windowsの場合は別途MeCabのインストールが必要
+
+# Linux/Mac
+pip install mecab-python3
 ```
+
+MeCab がなくても動作します（文字単位のトークン化にフォールバック）。
+
+## 主要依存パッケージ
+- **LangChain**: LCEL パイプライン、RAG統合
+- **langchain-openai**: Azure OpenAI 統合
+- **langchain-postgres**: pgvector 連携
+- **sentence-transformers**: 埋め込みベクトル
+- **networkx**: グラフ処理（PageRank）
+- **scikit-learn**: TF-IDF
+- **numpy, pandas**: データ処理
 
 ## ライセンス
 MIT License
 
-## 貢献
-Issue や Pull Request は歓迎します。
+## 参考文献
+- Zhang et al. (2017). "SemRe-Rank: Improving Automatic Term Extraction By Incorporating Semantic Relatedness With Personalised PageRank"
 
 ## 作者
 uchi736
 
 ## 更新履歴
+- 2025.01: SemRe-Rank + RAG定義生成 + LCEL対応（メジャーアップデート）
 - 2024.01: 見出し検出機能と条件付きフィルタリング追加
 - 2024.01: 初版リリース
