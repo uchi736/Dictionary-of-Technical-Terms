@@ -6,17 +6,20 @@ Definition Enricher
 """
 
 import os
-from typing import List, Optional
+import json
+from typing import List, Optional, Dict
 from pathlib import Path
 
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
 from langchain_postgres import PGVector
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
 
 from dictionary_system.core.models.base_extractor import Term
 from dictionary_system.core.rag.bm25_index import BM25Index
 from dictionary_system.core.rag.hybrid_search import HybridSearchChain
 from dictionary_system.config.rag_config import Config
-from dictionary_system.config.prompts import PromptConfig
+from dictionary_system.config.prompts import PromptConfig, get_technical_term_judgment_prompt_messages
 
 
 class DefinitionEnricher:
@@ -88,7 +91,7 @@ class DefinitionEnricher:
             sentences = [text]
 
         if self.use_bm25:
-            self.bm25_index = BM25Index(use_mecab=True)
+            self.bm25_index = BM25Index()
             self.bm25_index.add_documents(
                 sentences,
                 metadatas=[{"sentence_id": i} for i in range(len(sentences))]
@@ -222,3 +225,89 @@ def enrich_terms_with_definitions(
         print("定義生成開始...\n")
 
     return enricher.enrich_terms(terms, top_n=top_n, verbose=verbose)
+
+
+def filter_technical_terms_by_definition(
+    terms: List[Term],
+    config: Optional[Config] = None,
+    llm_model: str = "gpt-4o",
+    verbose: bool = True
+) -> List[Term]:
+    """
+    定義ベースで専門用語をフィルタリング
+
+    Args:
+        terms: 定義付き用語リスト
+        config: 設定
+        llm_model: LLMモデル名
+        verbose: 進捗表示
+
+    Returns:
+        専門用語と判定された用語のみのリスト
+    """
+    config = config or Config()
+
+    terms_with_def = [t for t in terms if t.definition]
+
+    if not terms_with_def:
+        return []
+
+    if verbose:
+        print(f"専門用語判定: {len(terms_with_def)}件を処理中...")
+
+    llm = AzureChatOpenAI(
+        azure_endpoint=config.azure_openai_endpoint,
+        api_key=config.azure_openai_api_key,
+        api_version=config.azure_openai_api_version,
+        azure_deployment=llm_model,
+        temperature=0.0
+    )
+
+    prompt = ChatPromptTemplate.from_messages(
+        get_technical_term_judgment_prompt_messages()
+    )
+    chain = prompt | llm | StrOutputParser()
+
+    technical_terms = []
+
+    for i, term in enumerate(terms_with_def, 1):
+        if verbose and i % 10 == 0:
+            print(f"  {i}/{len(terms_with_def)}件処理中...")
+
+        result_text = chain.invoke({
+            "term": term.term,
+            "definition": term.definition
+        })
+
+        result = _parse_judgment_result(result_text)
+
+        if result and result.get("is_technical", False):
+            technical_terms.append(term)
+            if verbose:
+                print(f"  [OK] {term.term}: 専門用語 (信頼度: {result.get('confidence', 0):.2f})")
+        elif verbose:
+            print(f"  [NG] {term.term}: 一般用語")
+
+    if verbose:
+        print(f"\n専門用語: {len(technical_terms)}/{len(terms_with_def)}件")
+
+    return technical_terms
+
+
+def _parse_judgment_result(text: str) -> Optional[Dict]:
+    """LLM判定結果のJSONをパース"""
+    text = text.strip()
+
+    if text.startswith("```json"):
+        text = text[7:]
+    if text.startswith("```"):
+        text = text[3:]
+    if text.endswith("```"):
+        text = text[:-3]
+
+    text = text.strip()
+
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None

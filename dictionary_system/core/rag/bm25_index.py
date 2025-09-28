@@ -3,7 +3,7 @@
 BM25 Index Implementation for Japanese
 =======================================
 日本語に対応したBM25インデックス実装
-MeCabによる形態素解析 + BM25スコアリング
+SudachiPyによる形態素解析 + BM25スコアリング
 """
 
 import math
@@ -12,11 +12,11 @@ from collections import defaultdict, Counter
 import numpy as np
 
 try:
-    import MeCab
-    MECAB_AVAILABLE = True
+    from sudachipy import tokenizer, dictionary
+    SUDACHI_AVAILABLE = True
 except ImportError:
-    MECAB_AVAILABLE = False
-    print("Warning: MeCab not available. Using simple tokenization.")
+    SUDACHI_AVAILABLE = False
+    print("Warning: SudachiPy not available. Using simple tokenization.")
 
 
 class BM25Index:
@@ -36,25 +36,24 @@ class BM25Index:
     def __init__(
         self,
         k1: float = 1.5,
-        b: float = 0.75,
-        use_mecab: bool = True
+        b: float = 0.75
     ):
         """
         Args:
             k1: 語の頻度の飽和を制御（1.2〜2.0推奨）
             b: 文書長の正規化強度（0〜1、0.75推奨）
-            use_mecab: MeCabを使用するか（Falseの場合は文字単位）
         """
         self.k1 = k1
         self.b = b
-        self.use_mecab = use_mecab and MECAB_AVAILABLE
+        self.use_sudachi = SUDACHI_AVAILABLE
 
-        if self.use_mecab:
+        if self.use_sudachi:
             try:
-                self.mecab = MeCab.Tagger("-Owakati")
+                self.sudachi_tokenizer = dictionary.Dictionary().create()
+                self.sudachi_mode = tokenizer.Tokenizer.SplitMode.C
             except Exception as e:
-                print(f"MeCab initialization failed: {e}")
-                self.use_mecab = False
+                print(f"SudachiPy initialization failed: {e}")
+                self.use_sudachi = False
 
         self.documents: List[Dict] = []
         self.doc_freqs: Counter = Counter()
@@ -72,9 +71,9 @@ class BM25Index:
         Returns:
             トークンのリスト
         """
-        if self.use_mecab:
-            result = self.mecab.parse(text).strip()
-            tokens = result.split()
+        if self.use_sudachi:
+            tokens = self.sudachi_tokenizer.tokenize(text, self.sudachi_mode)
+            return [token.surface() for token in tokens]
         else:
             tokens = list(text.replace(" ", ""))
 
