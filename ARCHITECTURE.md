@@ -907,14 +907,25 @@ def extract_synonym_hierarchy(
     terms: List[Term],
     min_cluster_size: int = 2,
     generate_category_names: bool = True,
+    use_umap: bool = False,  # オプション: UMAP次元削減
+    umap_n_components: int = 50,
     verbose: bool = True
 ) -> Dict[str, SynonymHierarchy]:
     # 1. 定義埋め込み計算
     definitions = [t.definition for t in terms if t.definition]
     embeddings = azure_embeddings.embed_documents(definitions)
-    embeddings = np.array(embeddings)
+    embeddings = np.array(embeddings)  # shape: (n_terms, 1536)
 
-    # 2. HDBSCANクラスタリング
+    # 2. UMAP次元削減（オプション）
+    if use_umap:
+        reducer = UMAP(
+            n_components=umap_n_components,  # 1536 → 50次元
+            metric='cosine',
+            random_state=42
+        )
+        embeddings = reducer.fit_transform(embeddings)
+
+    # 3. HDBSCANクラスタリング
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
         metric='euclidean',
@@ -922,11 +933,11 @@ def extract_synonym_hierarchy(
     )
     cluster_labels = clusterer.fit_predict(embeddings)
 
-    # 3. 階層構造抽出
+    # 4. 階層構造抽出
     condensed_tree = clusterer.condensed_tree_
     hierarchy = _build_hierarchy_from_tree(condensed_tree, terms, cluster_labels)
 
-    # 4. 代表語選定
+    # 5. 代表語選定
     for cluster_id, node in hierarchy.items():
         # クラスタの重心に最も近い用語を代表語とする
         cluster_embeddings = embeddings[node.term_indices]
@@ -935,7 +946,7 @@ def extract_synonym_hierarchy(
         representative_idx = np.argmin(distances)
         node.representative = node.terms[representative_idx]
 
-    # 5. LLMでカテゴリ名生成
+    # 6. LLMでカテゴリ名生成
     if generate_category_names:
         for node in hierarchy.values():
             category_info = _generate_category_name(node, llm)
@@ -945,6 +956,34 @@ def extract_synonym_hierarchy(
 
     return hierarchy
 ```
+
+#### UMAP次元削減（オプション）
+
+**目的**: 高次元埋め込み（1536次元）の次元の呪いを緩和
+
+##### UMAPとは
+- **UMAP** = Uniform Manifold Approximation and Projection
+- 高次元データを低次元に圧縮しながら構造を保持
+- t-SNEより高速で、大域的構造も保持
+
+##### メリット
+1. **次元の呪い緩和**: 1536次元 → 50次元
+2. **クラスタリング精度向上**: 密度推定が安定
+3. **計算コスト削減**: 距離計算が高速化
+
+##### 使用場面
+- 用語数が多い場合（50件以上）
+- クラスタリング結果にノイズが多い場合
+- より明確な階層構造を得たい場合
+
+##### パラメータ
+```python
+use_umap=True,           # UMAP有効化
+umap_n_components=50,    # 削減後の次元数（推奨: 30-100）
+umap_metric='cosine'     # 距離メトリック（cosine推奨）
+```
+
+**注意**: UMAPは非決定的なため、`random_state=42`で再現性を確保
 
 #### condensed_tree構造
 

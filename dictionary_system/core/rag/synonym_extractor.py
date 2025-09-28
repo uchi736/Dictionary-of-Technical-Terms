@@ -22,6 +22,12 @@ try:
 except ImportError:
     HDBSCAN_AVAILABLE = False
 
+try:
+    from umap import UMAP
+    UMAP_AVAILABLE = True
+except ImportError:
+    UMAP_AVAILABLE = False
+
 from dictionary_system.core.models.base_extractor import Term
 from dictionary_system.config.prompts import (
     get_synonym_detection_prompt_messages,
@@ -318,7 +324,10 @@ class HierarchicalSynonymExtractor:
         config: Optional[Config] = None,
         min_cluster_size: int = 2,
         min_samples: int = 1,
-        llm_model: str = "gpt-4o"
+        llm_model: str = "gpt-4o",
+        use_umap: bool = False,
+        umap_n_components: int = 50,
+        umap_metric: str = "cosine"
     ):
         """
         Args:
@@ -326,6 +335,9 @@ class HierarchicalSynonymExtractor:
             min_cluster_size: 最小クラスタサイズ
             min_samples: HDBSCAN の min_samples
             llm_model: カテゴリ名生成用LLMモデル
+            use_umap: UMAP次元削減を使用するか
+            umap_n_components: UMAP削減後の次元数（デフォルト: 50）
+            umap_metric: UMAP距離メトリック（cosine推奨）
         """
         if not HDBSCAN_AVAILABLE:
             raise ImportError("hdbscan not available. pip install hdbscan")
@@ -333,6 +345,12 @@ class HierarchicalSynonymExtractor:
         self.config = config or Config()
         self.min_cluster_size = min_cluster_size
         self.min_samples = min_samples
+        self.use_umap = use_umap
+        self.umap_n_components = umap_n_components
+        self.umap_metric = umap_metric
+
+        if self.use_umap and not UMAP_AVAILABLE:
+            raise ImportError("umap-learn not available. pip install umap-learn")
 
         self.embeddings = AzureOpenAIEmbeddings(
             azure_endpoint=self.config.azure_openai_endpoint,
@@ -375,6 +393,17 @@ class HierarchicalSynonymExtractor:
             print(f"HDBSCAN 階層的クラスタリング: {len(terms_with_def)}件")
 
         definition_embeddings = self._compute_embeddings(terms_with_def)
+
+        if self.use_umap:
+            if verbose:
+                print(f"  UMAP次元削減: {definition_embeddings.shape[1]} → {self.umap_n_components}次元")
+            
+            reducer = UMAP(
+                n_components=self.umap_n_components,
+                metric=self.umap_metric,
+                random_state=42
+            )
+            definition_embeddings = reducer.fit_transform(definition_embeddings)
 
         clusterer = hdbscan.HDBSCAN(
             min_cluster_size=self.min_cluster_size,
