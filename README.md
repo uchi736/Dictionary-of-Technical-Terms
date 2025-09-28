@@ -1,38 +1,44 @@
 # Dictionary of Technical Terms
-専門用語辞書自動構築システム（SemRe-Rank + RAG定義生成）
+専門用語辞書自動構築システム（V4: 統合候補抽出 + SemRe-Rank + RAG定義生成）
 
 ## 概要
 PDFドキュメントから専門用語を自動抽出し、RAGによる定義生成で辞書を構築するシステムです。
-SemRe-Rankアルゴリズムと最新のLangChain LCEL技術を組み合わせた高精度な専門用語処理システムです。
+正規表現・SudachiPy・n-gramの3手法統合による高網羅性抽出と、SemRe-Rankアルゴリズムによる高精度スコアリング、
+さらにRAGによる自動定義生成を組み合わせた最新の専門用語処理システムです。
 
 ## 特徴
 - 📄 PDFからの自動テキスト抽出
-- 🔬 **SemRe-Rank**: 意味的関連性 + Personalized PageRankによる高精度抽出
+- 🔬 **3手法統合抽出**: 正規表現（5パターン）+ SudachiPy形態素解析 + n-gram複合語生成
+- 🎯 **SemRe-Rank**: 意味的関連性 + Personalized PageRankによる高精度抽出
 - 🤖 **RAG定義生成**: BM25 + ベクトル検索 + LLMによる自動定義付与
 - ⚡ **LCEL対応**: LangChain Expression Languageによる宣言的パイプライン
-- 🎯 エルボー法によるシード用語自動選択
+- 🌐 **汎用性**: ドメイン非依存、統計的手法のみでフィルタリング
 - 🔍 Azure OpenAI Embeddings (text-embedding-3-small) 対応
 - 📊 ハイブリッド検索（BM25 + pgvector）による高精度RAG
+- 🏗️ **階層的類義語抽出**: HDBSCAN + LLMによるカテゴリ命名
 
 ## システム構成
 
 ```
 dictionary_system/
 ├── config/
-│   ├── prompts.py                  # LLMプロンプト管理
-│   └── rag_config.py               # 環境設定
+│   ├── prompts.py                         # LLMプロンプト管理
+│   └── rag_config.py                      # 環境設定
 ├── core/
 │   ├── models/
-│   │   └── base_extractor.py      # Term, BaseExtractor
+│   │   └── base_extractor.py             # Term, BaseExtractor
 │   ├── extractors/
-│   │   ├── semrerank_correct.py   # SemRe-Rank実装
-│   │   └── statistical_extractor_v2.py
+│   │   ├── enhanced_term_extractor_v4.py # V4統合抽出器（推奨）
+│   │   ├── semrerank_correct.py          # SemRe-Rank実装
+│   │   └── statistical_extractor_v2.py   # V3実装
 │   └── rag/
-│       ├── bm25_index.py           # BM25検索 + RRF
-│       ├── hybrid_search.py        # ハイブリッド検索チェーン
-│       ├── definition_enricher.py  # 定義付与統合
-│       └── extraction_pipeline.py  # LCEL パイプライン
-└── docs/                           # ドキュメント
+│       ├── bm25_index.py                  # BM25検索 + RRF
+│       ├── hybrid_search.py               # ハイブリッド検索チェーン
+│       ├── definition_enricher.py         # 定義付与統合
+│       ├── synonym_extractor.py           # 階層的類義語抽出
+│       └── extraction_pipeline.py         # LCEL パイプライン
+├── ARCHITECTURE.md                        # 詳細アーキテクチャドキュメント
+└── README.md                              # このファイル
 ```
 
 ## インストール
@@ -83,34 +89,61 @@ LANGCHAIN_PROJECT=term-extraction
 
 ## 使用方法
 
-### 1. 基本的な専門用語抽出（SemRe-Rank）
+### 1. V4統合抽出器（推奨）
 
 ```python
-from dictionary_system.core.extractors.semrerank_correct import SemReRankExtractor
+from dictionary_system.core.extractors.enhanced_term_extractor_v4 import EnhancedTermExtractorV4
 
 # 抽出器の初期化
-extractor = SemReRankExtractor(
-    base_ate_method="tfidf",
-    use_azure_embeddings=True,
-    auto_select_seeds=True,
-    seed_z=50,
-    use_elbow_detection=True,
-    min_seed_count=5,
-    max_seed_ratio=0.7
+extractor = EnhancedTermExtractorV4(
+    # 候補抽出パラメータ
+    min_term_length=2,
+    max_term_length=15,
+    min_frequency=2,
+    use_sudachi=True,              # SudachiPy形態素解析を使用
+    use_ngram_generation=True,     # n-gram複合語生成を使用
+    max_ngram=3,                   # n-gramの最大長
+
+    # SemRe-Rankパラメータ
+    relmin=0.5,                    # 最小類似度閾値
+    reltop=0.15,                   # 上位選択割合
+    alpha=0.85,                    # PPRダンピングファクタ
+
+    # RAG/LLMパラメータ
+    enable_definition_generation=True,    # 定義生成
+    enable_definition_filtering=True,     # LLM専門用語判定
+    top_n_definition=30,
+
+    # 階層化パラメータ
+    enable_synonym_hierarchy=True,        # 階層的類義語抽出
+    min_cluster_size=2,
+    generate_category_names=True
 )
 
 # テキストから専門用語を抽出
 text = """
-アンモニア燃料エンジンは、次世代の環境対応技術として注目されている。
-このアンモニア燃料エンジンは、従来のディーゼルエンジンと比較して、
-CO2排出量を大幅に削減できる。
+舶用アンモニア燃料エンジンは、次世代の環境対応技術として注目されている。
+この6L28ADFエンジンは、従来のディーゼルエンジンと比較して、
+GHG排出量を大幅に削減できる。国際エネルギー機関（IEA）も
+この技術の重要性を指摘している。
 """
 
-terms = extractor.extract(text)
+result = extractor.extract_terms(text)
 
 # 結果の表示
-for term in terms[:10]:
-    print(f"{term.term}: {term.score:.4f}")
+print(f"抽出された専門用語: {len(result['terms'])}件")
+for term in result['terms'][:10]:
+    print(f"\n【{term.term}】")
+    print(f"スコア: {term.score:.4f}")
+    if term.definition:
+        print(f"定義: {term.definition}")
+
+# 階層構造の表示
+if 'hierarchy' in result and result['hierarchy']:
+    print("\n\n=== 階層的類義語グループ ===")
+    for group in result['hierarchy']:
+        print(f"\n◆ {group['category_name']}")
+        print(f"  用語: {', '.join(group['terms'][:5])}")
 ```
 
 ### 2. 定義自動生成（RAG）
@@ -167,17 +200,36 @@ results = await pipeline.abatch(texts)
 
 ## 主要機能の詳細
 
+### V4統合候補抽出（3手法）
+1. **正規表現パターンマッチング（5パターン）**
+   - カタカナ、漢字、英数字、混合パターン
+   - 型番完全抽出（例: "6L28ADF"）
+
+2. **SudachiPy形態素解析**
+   - 連続名詞の自動連結
+   - 後方suffix生成（"ABC" → "BC", "C"）
+
+3. **n-gram複合語生成**
+   - 2-gram〜max_ngramの組み合わせ
+   - 見逃しを最小化（例: "舶用アンモニア", "アンモニア燃料"）
+
 ### SemRe-Rank アルゴリズム
+- **基底スコア**: 0.7 × TF-IDF + 0.3 × C-value
 - **シード用語選択**: エルボー法による自動境界検出
-- **意味的関連性**: Azure埋め込み or SentenceTransformer
-- **Personalized PageRank**: シード用語を重視したグラフスコアリング
-- **文書レベル処理**: 文単位でグラフ構築→集約
+- **意味的関連性グラフ**: relmin（最小類似度）+ reltop（上位%）
+- **Personalized PageRank**: シード用語から伝播
+- **最終スコア**: base_score × PPR_score
 
 ### RAG定義生成
 - **ハイブリッド検索**: BM25（キーワード）+ ベクトル検索（意味）
 - **RRF統合**: Reciprocal Rank Fusion で検索結果を最適統合
 - **LLMプロンプト**: config/prompts.py で一元管理
 - **LCEL対応**: 宣言的なチェーン構築、バッチ処理高速化
+
+### 階層的類義語抽出
+- **HDBSCAN**: 密度ベースクラスタリング
+- **condensed_tree**: 階層構造自動検出
+- **LLMカテゴリ命名**: GPT-4oによる自動命名
 
 ### プロンプト管理
 ```python
@@ -190,28 +242,41 @@ config.definition_system = "あなたは専門用語の定義作成の専門家�
 
 ## アーキテクチャ
 
-### データフロー
+### データフロー（V4）
 ```
 テキスト
   ↓
-前処理
+STEP 1: 候補抽出（3手法統合）
+  ├─ 正規表現（5パターン）
+  ├─ SudachiPy形態素解析 + suffix
+  └─ n-gram複合語生成
   ↓
-SemRe-Rank 抽出
-  ├─ 候補抽出（正規表現）
-  ├─ TF-IDF スコアリング
+STEP 2-3: 統計的スコアリング
+  ├─ TF-IDF計算
+  └─ C-value計算
+  ↓
+STEP 4-6: SemRe-Rank
   ├─ シード選択（エルボー法）
+  ├─ 意味的関連性グラフ（relmin/reltop）
   └─ Personalized PageRank
   ↓
-用語リスト（Term[]）
-  ↓
-RAG 定義生成
-  ├─ BM25 検索
+STEP 7: RAG定義生成（オプション）
+  ├─ BM25検索
   ├─ ベクトル検索（pgvector）
-  ├─ RRF 統合
-  └─ LLM 定義生成
+  ├─ RRF統合
+  └─ LLM定義生成
   ↓
-定義付き用語辞書
+STEP 8: LLM専門用語判定（オプション）
+  └─ 用語+定義をLLMで判定
+  ↓
+STEP 9: 階層的類義語抽出（オプション）
+  ├─ HDBSCAN クラスタリング
+  └─ LLM カテゴリ命名
+  ↓
+専門用語辞書 + 階層構造
 ```
+
+詳細は [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。
 
 ### 依存関係
 ```
@@ -255,9 +320,10 @@ MeCab がなくても動作します（文字単位のトークン化にフォ�
 - **LangChain**: LCEL パイプライン、RAG統合
 - **langchain-openai**: Azure OpenAI 統合
 - **langchain-postgres**: pgvector 連携
+- **SudachiPy**: 日本語形態素解析
 - **sentence-transformers**: 埋め込みベクトル
 - **networkx**: グラフ処理（PageRank）
-- **scikit-learn**: TF-IDF
+- **scikit-learn**: TF-IDF、HDBSCAN
 - **numpy, pandas**: データ処理
 
 ## ライセンス
@@ -270,6 +336,7 @@ MIT License
 uchi736
 
 ## 更新履歴
+- 2025.01: **V4リリース** - 3手法統合候補抽出（正規表現5パターン + SudachiPy + n-gram）、階層的類義語抽出、汎用性向上
 - 2025.01: SemRe-Rank + RAG定義生成 + LCEL対応（メジャーアップデート）
 - 2024.01: 見出し検出機能と条件付きフィルタリング追加
 - 2024.01: 初版リリース
