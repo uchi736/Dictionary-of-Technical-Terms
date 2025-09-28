@@ -333,13 +333,14 @@ if st.session_state.extraction_results:
             # 階層的クラスタ JSON
             if st.session_state.hierarchy:
                 import json
+                import numpy as np
                 hierarchy_dict = {}
                 for rep, node in st.session_state.hierarchy.items():
                     hierarchy_dict[rep] = {
                         'category': node.category_name,
-                        'confidence': node.category_confidence,
+                        'confidence': float(node.category_confidence) if isinstance(node.category_confidence, (np.floating, np.integer)) else node.category_confidence,
                         'terms': node.terms,
-                        'cluster_id': node.cluster_id
+                        'cluster_id': int(node.cluster_id) if isinstance(node.cluster_id, (np.integer, np.int64)) else node.cluster_id
                     }
 
                 json_str = json.dumps(hierarchy_dict, ensure_ascii=False, indent=2)

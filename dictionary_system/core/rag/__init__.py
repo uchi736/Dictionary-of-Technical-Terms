@@ -24,7 +24,8 @@ from dictionary_system.core.rag.hybrid_search import (
 
 from dictionary_system.core.rag.definition_enricher import (
     DefinitionEnricher,
-    enrich_terms_with_definitions
+    enrich_terms_with_definitions,
+    filter_technical_terms_by_definition
 )
 
 from dictionary_system.core.rag.extraction_pipeline import (
@@ -32,6 +33,15 @@ from dictionary_system.core.rag.extraction_pipeline import (
     SimplifiedExtractionPipeline,
     create_extraction_pipeline,
     create_simple_pipeline
+)
+
+from dictionary_system.core.rag.synonym_extractor import (
+    SynonymExtractor,
+    SynonymPair,
+    extract_synonym_groups,
+    HierarchicalSynonymExtractor,
+    SynonymHierarchy,
+    extract_synonym_hierarchy
 )
 
 __all__ = [
@@ -44,8 +54,15 @@ __all__ = [
     "create_simple_chain",
     "DefinitionEnricher",
     "enrich_terms_with_definitions",
+    "filter_technical_terms_by_definition",
     "ExtractionPipeline",
     "SimplifiedExtractionPipeline",
     "create_extraction_pipeline",
-    "create_simple_pipeline"
+    "create_simple_pipeline",
+    "SynonymExtractor",
+    "SynonymPair",
+    "extract_synonym_groups",
+    "HierarchicalSynonymExtractor",
+    "SynonymHierarchy",
+    "extract_synonym_hierarchy"
 ]

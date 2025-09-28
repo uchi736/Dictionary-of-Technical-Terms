@@ -230,11 +230,11 @@ def enrich_terms_with_definitions(
 def filter_technical_terms_by_definition(
     terms: List[Term],
     config: Optional[Config] = None,
-    llm_model: str = "gpt-4o",
+    llm_model: str = "gpt-4.1-mini",
     verbose: bool = True
 ) -> List[Term]:
     """
-    定義ベースで専門用語をフィルタリング
+    定義ベースで専門用語をフィルタリング（バッチ処理版）
 
     Args:
         terms: 定義付き用語リスト
@@ -253,7 +253,7 @@ def filter_technical_terms_by_definition(
         return []
 
     if verbose:
-        print(f"専門用語判定: {len(terms_with_def)}件を処理中...")
+        print(f"専門用語判定: {len(terms_with_def)}件をバッチ処理中...")
 
     llm = AzureChatOpenAI(
         azure_endpoint=config.azure_openai_endpoint,
@@ -268,17 +268,15 @@ def filter_technical_terms_by_definition(
     )
     chain = prompt | llm | StrOutputParser()
 
+    batch_inputs = [
+        {"term": term.term, "definition": term.definition}
+        for term in terms_with_def
+    ]
+
+    result_texts = chain.batch(batch_inputs)
+
     technical_terms = []
-
-    for i, term in enumerate(terms_with_def, 1):
-        if verbose and i % 10 == 0:
-            print(f"  {i}/{len(terms_with_def)}件処理中...")
-
-        result_text = chain.invoke({
-            "term": term.term,
-            "definition": term.definition
-        })
-
+    for term, result_text in zip(terms_with_def, result_texts):
         result = _parse_judgment_result(result_text)
 
         if result and result.get("is_technical", False):

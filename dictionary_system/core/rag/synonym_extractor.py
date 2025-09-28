@@ -62,7 +62,7 @@ class SynonymExtractor:
         config: Optional[Config] = None,
         similarity_threshold: float = 0.7,
         max_candidates: int = 100,
-        llm_model: str = "gpt-4o"
+        llm_model: str = "gpt-4.1-mini"
     ):
         """
         Args:
@@ -324,7 +324,7 @@ class HierarchicalSynonymExtractor:
         config: Optional[Config] = None,
         min_cluster_size: int = 2,
         min_samples: int = 1,
-        llm_model: str = "gpt-4o",
+        llm_model: str = "gpt-4.1-mini",
         use_umap: bool = False,
         umap_n_components: int = 50,
         umap_metric: str = "cosine"

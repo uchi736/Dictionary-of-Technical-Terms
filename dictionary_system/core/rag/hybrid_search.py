@@ -58,7 +58,7 @@ class HybridSearchChain:
         bm25_top_k: int = 10,
         vector_top_k: int = 10,
         rrf_k: int = 60,
-        include_similar_terms: bool = True
+        include_similar_terms: bool = False
     ):
         """
         Args:
@@ -69,7 +69,7 @@ class HybridSearchChain:
             bm25_top_k: BM25 検索結果数
             vector_top_k: ベクトル検索結果数
             rrf_k: RRF パラメータ
-            include_similar_terms: 類似用語を含めるか
+            include_similar_terms: 類似用語をLLMで抽出するか（V4ではクラスタリングで代替、パフォーマンス改善のためデフォルトFalse）
         """
         self.llm = llm
         self.vector_store = vector_store
@@ -341,7 +341,7 @@ def create_hybrid_chain(
     azure_api_key: str,
     vector_store: PGVector,
     bm25_index: BM25Index,
-    deployment_name: str = "gpt-4o",
+    deployment_name: str = "gpt-4.1-mini",
     **kwargs
 ) -> HybridSearchChain:
     """
@@ -379,7 +379,7 @@ def create_simple_chain(
     azure_endpoint: str,
     azure_api_key: str,
     vector_store: PGVector,
-    deployment_name: str = "gpt-4o",
+    deployment_name: str = "gpt-4.1-mini",
     **kwargs
 ) -> SimpleDefinitionChain:
     """シンプル版チェーンのファクトリ"""
