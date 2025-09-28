@@ -252,6 +252,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
             base_scores
         )
 
+        # STEP 6.5: 部分文字列フィルタリング (新規)
+        logger.info("STEP 6.5: Substring filtering")
+        final_scores = self._filter_substring_duplicates(final_scores)
+
         # Term オブジェクトに変換
         terms = [
             Term(term=term, score=score)
@@ -261,9 +265,27 @@ class EnhancedTermExtractorV4(BaseExtractor):
         # スコア順にソート
         terms.sort(key=lambda t: t.score, reverse=True)
 
-        logger.info(f"Extracted {len(terms)} terms")
+        logger.info(f"After filtering: {len(terms)} terms")
 
-        # STEP 7: RAG定義生成 (オプション)
+        # STEP 6.7: 階層的類義語抽出（早期実行）
+        if self.enable_synonym_hierarchy and len(terms) >= self.min_cluster_size:
+            logger.info("STEP 6.7: Hierarchical clustering (early)")
+            self.hierarchy = extract_synonym_hierarchy(
+                terms,
+                min_cluster_size=self.min_cluster_size,
+                generate_category_names=False,  # まだ定義がないのでカテゴリ名生成は後回し
+                use_umap=self.use_umap,
+                umap_n_components=self.umap_n_components,
+                verbose=False
+            )
+
+            # STEP 6.8: クラスタ内フィルタリング (新規)
+            logger.info("STEP 6.8: Within-cluster filtering")
+            terms = self._filter_terms_within_clusters(terms, self.hierarchy)
+        else:
+            self.hierarchy = None
+
+        # STEP 7: RAG定義生成 (フィルタ後の用語のみ)
         if self.enable_definition_generation:
             logger.info("STEP 7: RAG definition generation")
             terms = enrich_terms_with_definitions(
@@ -273,34 +295,32 @@ class EnhancedTermExtractorV4(BaseExtractor):
                 verbose=False
             )
 
-        # STEP 8: LLM専門用語判定 (オプション)
-        if self.enable_definition_filtering:
-            logger.info("STEP 8: LLM technical term filtering")
-            terms = filter_technical_terms_by_definition(
+        # STEP 8: カテゴリ名生成（定義生成後）
+        if self.hierarchy and self.generate_category_names:
+            logger.info("STEP 8: Category name generation")
+            from dictionary_system.core.rag.synonym_extractor import generate_cluster_category_names
+            self.hierarchy = generate_cluster_category_names(
+                self.hierarchy,
                 terms,
                 verbose=False
             )
 
-        # STEP 9: 階層的類義語抽出 (オプション)
-        if self.enable_synonym_hierarchy and len(terms) >= self.min_cluster_size:
-            logger.info("STEP 9: Hierarchical synonym extraction")
-            self.hierarchy = extract_synonym_hierarchy(
-                terms,
-                min_cluster_size=self.min_cluster_size,
-                generate_category_names=self.generate_category_names,
-                use_umap=self.use_umap,
-                umap_n_components=self.umap_n_components,
-                verbose=False
-            )
-            # 階層情報をメタデータに追加
+        # STEP 9: 階層情報をメタデータに追加
+        if self.hierarchy:
             for term in terms:
                 for rep, node in self.hierarchy.items():
                     if term.term in node.terms:
                         term.metadata['cluster_id'] = node.cluster_id
                         term.metadata['cluster_category'] = node.category_name
                         break
-        else:
-            self.hierarchy = None
+
+        # STEP 10: 最終LLM専門用語判定 (オプション)
+        if self.enable_definition_filtering:
+            logger.info("STEP 10: Final LLM technical term filtering")
+            terms = filter_technical_terms_by_definition(
+                terms,
+                verbose=False
+            )
 
         return terms
 
@@ -317,7 +337,9 @@ class EnhancedTermExtractorV4(BaseExtractor):
         patterns = [
             r'[ァ-ヶー]+',  # カタカナ
             r'[一-龯]{2,}',  # 漢字（2文字以上）
-            r'[0-9]*[A-Za-z][A-Za-z0-9]*',  # 英数字（数字始まり可、最低1文字必須）
+            r'[0-9]+[A-Za-z]+[0-9A-Za-z~\-]*',  # 型式番号（6DE~~, 6DE-50など）
+            r'[A-Za-z]+[0-9]+[A-Za-z0-9~\-]*',  # 逆パターン（ABC123など）
+            r'[A-Za-z]+',  # 純粋な英字（2文字以上はmin_term_lengthで制御）
             r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+',  # カタカナ+漢字
             r'[一-龯]+[ァ-ヶー]+[一-龯]+',  # 漢字+カタカナ+漢字
         ]
@@ -700,3 +722,183 @@ class EnhancedTermExtractorV4(BaseExtractor):
             ppr_scores = {node: 1.0 / len(graph) for node in graph.nodes()}
 
         return ppr_scores
+
+    def _filter_substring_duplicates(
+        self,
+        scored_terms: Dict[str, float],
+        score_ratio_threshold: float = 0.2
+    ) -> Dict[str, float]:
+        """
+        部分文字列の重複を除去
+
+        スコアが大幅に低い部分文字列を除外
+        例: 「削減」(0.048) vs 「削減率」(0.714)
+            → 「削減」はスコアが低いため除外
+
+        Args:
+            scored_terms: {用語: スコア}
+            score_ratio_threshold: より長い用語のスコアに対する閾値（デフォルト0.2 = 20%）
+
+        Returns:
+            フィルタ後の{用語: スコア}
+        """
+        terms_sorted = sorted(scored_terms.items(), key=lambda x: len(x[0]), reverse=True)
+        to_remove = set()
+
+        for i, (term_long, score_long) in enumerate(terms_sorted):
+            if term_long in to_remove:
+                continue
+
+            for j in range(i + 1, len(terms_sorted)):
+                term_short, score_short = terms_sorted[j]
+
+                if term_short in to_remove:
+                    continue
+
+                if term_short in term_long:
+                    if score_short < score_long * score_ratio_threshold:
+                        to_remove.add(term_short)
+                        logger.debug(
+                            f"Removed substring: '{term_short}' (score={score_short:.3f}) "
+                            f"contained in '{term_long}' (score={score_long:.3f})"
+                        )
+
+        filtered = {term: score for term, score in scored_terms.items() if term not in to_remove}
+        logger.info(f"Substring filtering: {len(scored_terms)} → {len(filtered)} terms")
+
+        return filtered
+
+    def _filter_terms_within_clusters(
+        self,
+        terms: List[Term],
+        hierarchy: Dict,
+        score_ratio_threshold: float = 3.0,
+        llm_model: str = "gpt-4.1-mini"
+    ) -> List[Term]:
+        """
+        クラスタ内で類似用語をフィルタリング
+
+        各クラスタについて:
+        - 単独用語: そのまま残す
+        - スコア差が大きい（threshold倍以上）: 上位のみ残す
+        - スコア拮抗: LLMに判定依頼
+
+        Args:
+            terms: Term オブジェクトのリスト
+            hierarchy: クラスタ階層情報
+            score_ratio_threshold: スコア差の閾値（デフォルト3.0 = 3倍）
+            llm_model: LLM モデル名
+
+        Returns:
+            フィルタ後のTermリスト
+        """
+        from dictionary_system.config.rag_config import Config
+        from langchain_openai import AzureChatOpenAI
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from dictionary_system.config.prompts import get_cluster_term_filtering_prompt_messages
+        import json
+
+        if not hierarchy:
+            return terms
+
+        config = Config()
+        terms_to_keep = []
+        llm_call_count = 0
+
+        for rep, node in hierarchy.items():
+            cluster_terms = [t for t in terms if t.term in node.terms]
+
+            if not cluster_terms:
+                continue
+
+            if len(cluster_terms) == 1:
+                terms_to_keep.extend(cluster_terms)
+                logger.debug(f"Cluster '{node.category_name}': Single term, keeping '{cluster_terms[0].term}'")
+                continue
+
+            cluster_terms_sorted = sorted(cluster_terms, key=lambda t: t.score, reverse=True)
+            top_score = cluster_terms_sorted[0].score
+            second_score = cluster_terms_sorted[1].score if len(cluster_terms_sorted) > 1 else 0
+
+            if top_score > second_score * score_ratio_threshold:
+                terms_to_keep.append(cluster_terms_sorted[0])
+                logger.info(
+                    f"Cluster '{node.category_name}': Large score gap, keeping only top term "
+                    f"'{cluster_terms_sorted[0].term}' (score={top_score:.3f})"
+                )
+                continue
+
+            logger.info(
+                f"Cluster '{node.category_name}': Score gap small, using LLM to filter "
+                f"{len(cluster_terms)} terms"
+            )
+
+            try:
+                llm = AzureChatOpenAI(
+                    azure_endpoint=config.azure_openai_endpoint,
+                    api_key=config.azure_openai_api_key,
+                    api_version=config.azure_openai_api_version,
+                    azure_deployment=llm_model,
+                    temperature=0.0
+                )
+
+                prompt = ChatPromptTemplate.from_messages(
+                    get_cluster_term_filtering_prompt_messages()
+                )
+                chain = prompt | llm | StrOutputParser()
+
+                terms_info = "\n".join([
+                    f"{i+1}. 「{t.term}」(スコア: {t.score:.3f})\n   定義: {t.definition or '（定義なし）'}"
+                    for i, t in enumerate(cluster_terms_sorted)
+                ])
+
+                result_text = chain.invoke({
+                    "category_name": node.category_name,
+                    "terms_info": terms_info
+                })
+
+                result = self._parse_cluster_filtering_result(result_text)
+                llm_call_count += 1
+
+                if result and "keep_terms" in result:
+                    keep_term_names = set(result["keep_terms"])
+                    filtered_terms = [t for t in cluster_terms if t.term in keep_term_names]
+                    terms_to_keep.extend(filtered_terms)
+                    logger.info(
+                        f"LLM filtered: {len(cluster_terms)} → {len(filtered_terms)} terms. "
+                        f"Keeping: {keep_term_names}"
+                    )
+                else:
+                    terms_to_keep.extend(cluster_terms_sorted[:1])
+                    logger.warning(f"LLM filtering failed, keeping top term only")
+
+            except Exception as e:
+                logger.error(f"LLM filtering error: {e}, keeping top term only")
+                terms_to_keep.append(cluster_terms_sorted[0])
+
+        logger.info(
+            f"Cluster-based filtering: {len(terms)} → {len(terms_to_keep)} terms "
+            f"(LLM calls: {llm_call_count})"
+        )
+
+        return terms_to_keep
+
+    def _parse_cluster_filtering_result(self, text: str) -> Optional[Dict]:
+        """クラスタフィルタリング結果のJSONをパース"""
+        text = text.strip()
+
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+
+        text = text.strip()
+
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse JSON: {text}")
+            return None
