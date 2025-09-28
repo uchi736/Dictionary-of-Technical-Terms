@@ -7,16 +7,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import plotly.graph_objects as go
 from pathlib import Path
 import tempfile
 import sys
 from datetime import datetime
+import fitz
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).parent))
 
-from dictionary_system.core.extractors.statistical_extractor_v2 import EnhancedTermExtractorV3
-import asyncio
+from dictionary_system.core.extractors.enhanced_term_extractor_v4 import EnhancedTermExtractorV4
 import os
 from dotenv import load_dotenv
 
@@ -33,89 +34,51 @@ st.set_page_config(
 # セッション状態の初期化
 if 'extraction_results' not in st.session_state:
     st.session_state.extraction_results = None
+if 'hierarchy' not in st.session_state:
+    st.session_state.hierarchy = None
 if 'uploaded_file_name' not in st.session_state:
     st.session_state.uploaded_file_name = None
 
-# タイトルとヘッダー
-st.title("📚 専門用語辞書自動構築システム")
-st.markdown("PDFドキュメントから専門用語を自動抽出し、重要度スコアを計算します。")
+st.title("📚 専門用語辞書自動構築システム V4 (TF-IDF + C-value + SemRe-Rank + RAG)")
+st.markdown("PDFから専門用語を抽出 → 定義生成 → LLM判定 → 階層的類義語グループ化")
 
-# サイドバー - パラメータ設定
 with st.sidebar:
     st.header("⚙️ パラメータ設定")
 
-    # Azure OpenAI設定
-    st.subheader("🤖 Azure OpenAI設定")
-    azure_endpoint = st.text_input(
-        "Azure Endpoint",
-        value=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-        type="password",
-        help="Azure OpenAIのエンドポイントURL"
-    )
-    azure_api_key = st.text_input(
-        "API Key",
-        value=os.getenv("AZURE_OPENAI_API_KEY", ""),
-        type="password",
-        help="Azure OpenAIのAPIキー"
-    )
+    st.subheader("🔤 基本設定")
+    min_term_length = st.slider("最小用語長", 2, 5, 2)
+    max_term_length = st.slider("最大用語長", 5, 15, 8)
+    min_frequency = st.slider("最小出現回数", 1, 5, 2)
 
-    st.subheader("基本設定")
-    min_frequency = st.slider(
-        "最小出現頻度",
-        min_value=1,
-        max_value=10,
-        value=2,
-        help="1に設定すると見出しの用語も抽出します"
-    )
-
-    col1, col2 = st.columns(2)
-    with col1:
-        min_term_length = st.number_input(
-            "最小文字数",
-            min_value=1,
-            max_value=10,
-            value=2
-        )
-    with col2:
-        max_term_length = st.number_input(
-            "最大文字数",
-            min_value=5,
-            max_value=30,
-            value=15
-        )
-
-    st.subheader("詳細設定")
-    k_neighbors = st.slider(
-        "kNN近傍数",
-        min_value=5,
-        max_value=20,
-        value=10,
-        help="グラフ構築時の近傍ノード数"
-    )
-
-    sim_threshold = st.slider(
-        "類似度閾値",
-        min_value=0.1,
-        max_value=0.9,
-        value=0.35,
-        step=0.05,
-        help="エッジを作成する最小類似度"
-    )
-
-    top_n = st.number_input(
-        "表示件数",
+    st.subheader("🎯 SemRe-Rank設定")
+    seed_z = st.slider(
+        "シード選定閾値 (Z-score)",
         min_value=10,
         max_value=100,
-        value=30,
-        step=10,
-        help="結果表示する上位件数"
+        value=50,
+        help="上位何件からシードを選定するか"
     )
 
-    use_cache = st.checkbox(
-        "埋め込みキャッシュを使用",
-        value=True,
-        help="計算済み埋め込みベクトルを再利用"
-    )
+    min_seed_count = st.slider("最小シード数", 3, 20, 5)
+    max_seed_ratio = st.slider("最大シード比率", 0.3, 0.9, 0.7, 0.1)
+
+    relmin = st.slider("relmin (最小類似度)", 0.0, 1.0, 0.5, 0.1)
+    reltop = st.slider("reltop (上位割合)", 0.05, 0.5, 0.15, 0.05)
+
+    st.subheader("📖 定義生成 (RAG)")
+    enable_definition = st.checkbox("定義生成を有効化", value=True)
+    top_n_definition = st.slider("定義生成数", 10, 100, 30, 10) if enable_definition else None
+
+    st.subheader("🔍 LLM専門用語判定")
+    enable_filtering = st.checkbox("専門用語フィルタリングを有効化", value=True)
+
+    st.subheader("🌳 階層的類義語抽出")
+    enable_hierarchy = st.checkbox("階層的類義語抽出を有効化", value=True)
+    min_cluster_size = st.slider("最小クラスタサイズ", 2, 5, 2) if enable_hierarchy else 2
+    generate_category_names = st.checkbox("LLMでカテゴリ名生成", value=True) if enable_hierarchy else False
+
+    use_umap = st.checkbox("UMAP次元削減を使用", value=False, help="高次元埋め込みを低次元に圧縮（クラスタリング精度向上）") if enable_hierarchy else False
+    umap_n_components = st.slider("UMAP削減次元数", 30, 100, 50, 10, help="1536次元からの削減先") if (enable_hierarchy and use_umap) else 50
 
 # メインエリア
 col1, col2 = st.columns([1, 1])
@@ -130,10 +93,9 @@ with col1:
     )
 
     if uploaded_file is not None:
-        st.success(f"✅ ファイルがアップロードされました: {uploaded_file.name}")
+        st.success(f"✅ ファイル: {uploaded_file.name}")
         st.session_state.uploaded_file_name = uploaded_file.name
 
-        # ファイル情報表示
         file_details = {
             "ファイル名": uploaded_file.name,
             "ファイルサイズ": f"{uploaded_file.size / 1024:.1f} KB",
@@ -153,55 +115,68 @@ with col2:
                 tmp_file.write(uploaded_file.read())
                 tmp_path = tmp_file.name
 
-            # プログレスバー表示
-            progress_bar = st.progress(0, text="抽出処理を開始しています...")
+            progress_bar = st.progress(0, text="処理開始...")
 
             try:
-                # Azure OpenAI設定を環境変数に設定
-                if azure_endpoint and azure_api_key:
-                    os.environ["AZURE_OPENAI_ENDPOINT"] = azure_endpoint
-                    os.environ["AZURE_OPENAI_API_KEY"] = azure_api_key
-                else:
-                    st.error("⚠️ Azure OpenAIの設定が必要です")
-                    st.stop()
+                progress_bar.progress(10, text="PDFからテキスト抽出中...")
+                doc = fitz.open(tmp_path)
+                text = ""
+                for page in doc:
+                    text += page.get_text()
+                doc.close()
 
-                # 抽出器の初期化
-                progress_bar.progress(10, text="抽出器を初期化中...")
-                extractor = EnhancedTermExtractorV3(
-                    min_frequency=min_frequency,
+                st.info(f"抽出テキスト: {len(text)}文字")
+
+                progress_bar.progress(20, text="専門用語抽出開始 (V4: TF-IDF + C-value + SemRe-Rank)...")
+
+                extractor = EnhancedTermExtractorV4(
                     min_term_length=min_term_length,
                     max_term_length=max_term_length,
-                    k_neighbors=k_neighbors,
-                    sim_threshold=sim_threshold,
-                    use_cache=use_cache,
-                    use_llm_validation=True,
+                    min_frequency=min_frequency,
                     use_azure_openai=True,
-                    use_rag_context=True
+                    seed_z=seed_z,
+                    use_elbow_detection=True,
+                    min_seed_count=min_seed_count,
+                    max_seed_ratio=max_seed_ratio,
+                    relmin=relmin,
+                    reltop=reltop,
+                    enable_definition_generation=enable_definition,
+                    enable_definition_filtering=enable_filtering,
+                    enable_synonym_hierarchy=enable_hierarchy,
+                    top_n_definition=top_n_definition,
+                    min_cluster_size=min_cluster_size,
+                    generate_category_names=generate_category_names,
+                    use_umap=use_umap,
+                    umap_n_components=umap_n_components
                 )
 
-                # 抽出実行（非同期関数を実行）
-                progress_bar.progress(30, text="PDFからテキストを抽出中...")
-                with st.spinner("専門用語を抽出しています（LLM検証を含む）..."):
-                    # 非同期関数を同期的に実行
-                    terms = asyncio.run(extractor.extract_terms_with_validation(tmp_path))
+                progress_bar.progress(40, text="用語抽出中...")
+                terms = extractor.extract(text)
 
-                progress_bar.progress(100, text="抽出完了！")
-
-                # 結果を保存
                 st.session_state.extraction_results = terms
 
-                # デバッグ: 最初の3件の値を表示
-                if terms and len(terms) > 0:
-                    st.write("[DEBUG] 抽出結果サンプル（最初の3件）:")
-                    for i, term in enumerate(terms[:3]):
-                        st.write(f"  {i+1}. {term['term']}: TF-IDF={term.get('tfidf', 'N/A')}, C-value={term.get('c_value', 'N/A')}")
+                if enable_definition:
+                    progress_bar.progress(60, text="定義生成中 (RAG)...")
+                    def_count = len([t for t in terms if t.definition])
+                    st.success(f"✅ {def_count}件に定義生成")
 
-                st.success(f"✨ {len(terms)}個の専門用語を抽出しました！")
+                if enable_filtering:
+                    progress_bar.progress(75, text="LLM専門用語判定中...")
+
+                if enable_hierarchy:
+                    progress_bar.progress(85, text="階層的類義語抽出中 (HDBSCAN)...")
+                    if hasattr(extractor, 'hierarchy') and extractor.hierarchy:
+                        st.session_state.hierarchy = extractor.hierarchy
+                        st.success(f"✅ {len(extractor.hierarchy)}個のクラスタを生成")
+
+                progress_bar.progress(100, text="完了!")
+                st.success(f"✅ {len(terms)}件の専門用語を抽出")
 
             except Exception as e:
-                st.error(f"エラーが発生しました: {str(e)}")
+                st.error(f"エラー: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
             finally:
-                # 一時ファイルを削除
                 Path(tmp_path).unlink(missing_ok=True)
                 progress_bar.empty()
     else:
@@ -211,161 +186,176 @@ with col2:
 if st.session_state.extraction_results:
     st.header("📊 抽出結果")
 
-    results = st.session_state.extraction_results[:top_n]
-
-    # タブで表示を切り替え
-    tab1, tab2, tab3 = st.tabs(["📋 抽出結果一覧", "📈 視覚化", "💾 エクスポート"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📋 専門用語一覧",
+        "📖 定義付き用語",
+        "🌳 階層的クラスタ",
+        "💾 エクスポート"
+    ])
 
     with tab1:
-        # データフレーム作成
-        df = pd.DataFrame(results)
-        df.index = range(1, len(df) + 1)
-        df.index.name = "順位"
+        st.subheader("抽出された専門用語 (Top 50)")
+        results = st.session_state.extraction_results[:50]
 
-        # 列名を日本語に変換
-        column_mapping = {
-            'term': '専門用語',
-            'score': '総合スコア',
-            'frequency': '出現頻度',
-            'c_value': 'C-value',
-            'tfidf': 'TF-IDF',
-            'pagerank': 'PageRank'
-        }
+        df = pd.DataFrame([{
+            '順位': i+1,
+            '専門用語': t.term,
+            'スコア': round(t.score, 4)
+        } for i, t in enumerate(results)])
 
-        # 存在する列のみマッピング
-        df = df.rename(columns={k: v for k, v in column_mapping.items() if k in df.columns})
-
-        # スコアを小数点3桁に整形
-        for col in ['総合スコア', 'C-value', 'TF-IDF', 'PageRank']:
-            if col in df.columns:
-                df[col] = df[col].round(3)
-
-        # 表示
         st.dataframe(
             df,
-            height=500,
-            column_config={
-                "専門用語": st.column_config.TextColumn(
-                    "専門用語",
-                    width="medium"
-                ),
-                "総合スコア": st.column_config.ProgressColumn(
-                    "総合スコア",
-                    min_value=0,
-                    max_value=1,
-                    format="%.3f"
-                ),
-                "出現頻度": st.column_config.NumberColumn(
-                    "出現頻度",
-                    format="%d"
-                )
-            }
+            hide_index=True,
+            height=500
         )
 
-        # 統計情報
-        col1, col2, col3, col4 = st.columns(4)
+        col1, col2 = st.columns(2)
         with col1:
             st.metric("総抽出数", len(st.session_state.extraction_results))
         with col2:
-            avg_score = np.mean([t['score'] for t in results])
+            avg_score = np.mean([t.score for t in results])
             st.metric("平均スコア", f"{avg_score:.3f}")
-        with col3:
-            total_freq = sum([t['frequency'] for t in results])
-            st.metric("総出現回数", total_freq)
-        with col4:
-            unique_freq_1 = len([t for t in results if t['frequency'] == 1])
-            st.metric("頻度1の用語", unique_freq_1)
 
     with tab2:
+        enriched = [t for t in st.session_state.extraction_results if t.definition]
+
+        if enriched:
+            st.subheader("定義付き専門用語")
+
+            for i, term in enumerate(enriched[:20], 1):
+                with st.expander(f"{i}. **{term.term}** (スコア: {term.score:.3f})"):
+                    st.markdown(f"**定義:**\n\n{term.definition}")
+
+            st.metric("定義付き用語数", len(enriched))
+        else:
+            st.info("定義はまだ生成されていません")
+
+    with tab3:
+        if st.session_state.hierarchy:
+            st.subheader("階層的類義語クラスタ")
+
+            hierarchy = st.session_state.hierarchy
+
+            # クラスタ統計
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("クラスタ数", len(hierarchy))
+            with col2:
+                clustered = sum(len(node.terms) for node in hierarchy.values())
+                st.metric("クラスタ化された用語", clustered)
+            with col3:
+                enriched = [t for t in st.session_state.extraction_results if t.definition]
+                if enriched:
+                    noise = len(enriched) - clustered
+                    st.metric("ノイズ (未クラスタ化)", noise)
+
+            # クラスタ表示
+            for i, (rep, node) in enumerate(hierarchy.items(), 1):
+                with st.expander(
+                    f"クラスタ {i}: **{node.category_name or rep}** "
+                    f"({len(node.terms)}件)"
+                ):
+                    if node.category_name:
+                        st.markdown(f"**カテゴリ:** {node.category_name}")
+                        st.markdown(f"**信頼度:** {node.category_confidence:.2f}")
+                        if node.category_reason:
+                            st.caption(node.category_reason)
+
+                    st.markdown("**含まれる用語:**")
+                    terms_list = ", ".join(node.terms)
+                    st.markdown(f"_{terms_list}_")
+
+            # ネットワークグラフ可視化
+            st.subheader("クラスタネットワーク")
+
+            # クラスタ間の関係を可視化
+            node_x = []
+            node_y = []
+            node_text = []
+            node_size = []
+
+            for i, (rep, node) in enumerate(hierarchy.items()):
+                angle = 2 * np.pi * i / len(hierarchy)
+                node_x.append(np.cos(angle))
+                node_y.append(np.sin(angle))
+                node_text.append(
+                    f"{node.category_name or rep}<br>{len(node.terms)}件"
+                )
+                node_size.append(len(node.terms) * 10 + 20)
+
+            fig = go.Figure()
+
+            fig.add_trace(go.Scatter(
+                x=node_x,
+                y=node_y,
+                mode='markers+text',
+                marker=dict(size=node_size, color='lightblue'),
+                text=node_text,
+                textposition='top center',
+                hoverinfo='text'
+            ))
+
+            fig.update_layout(
+                showlegend=False,
+                hovermode='closest',
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                height=500
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+        else:
+            st.info("階層的クラスタはまだ生成されていません")
+
+    with tab4:
+        st.subheader("データエクスポート")
+
         col1, col2 = st.columns(2)
 
         with col1:
-            # スコア分布
-            st.subheader("スコア分布")
-            fig_score = px.histogram(
-                df,
-                x='総合スコア',
-                nbins=20,
-                title="総合スコアの分布",
-                labels={'count': '用語数'}
-            )
-            st.plotly_chart(fig_score, use_responsive_container_width=True)
+            # 専門用語リスト CSV
+            if st.session_state.extraction_results:
+                df_export = pd.DataFrame([{
+                    '専門用語': t.term,
+                    'スコア': t.score
+                } for t in st.session_state.extraction_results[:50]])
+
+                csv = df_export.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 専門用語リスト (CSV)",
+                    data=csv,
+                    file_name=f"terms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv"
+                )
 
         with col2:
-            # 頻度分布（対数スケール）
-            st.subheader("出現頻度分布")
-            freq_counts = df['出現頻度'].value_counts().sort_index()
-            fig_freq = px.bar(
-                x=freq_counts.index,
-                y=freq_counts.values,
-                title="出現頻度ごとの用語数",
-                labels={'x': '出現頻度', 'y': '用語数'},
-                log_y=True
-            )
-            st.plotly_chart(fig_freq, use_responsive_container_width=True)
+            # 階層的クラスタ JSON
+            if st.session_state.hierarchy:
+                import json
+                hierarchy_dict = {}
+                for rep, node in st.session_state.hierarchy.items():
+                    hierarchy_dict[rep] = {
+                        'category': node.category_name,
+                        'confidence': node.category_confidence,
+                        'terms': node.terms,
+                        'cluster_id': node.cluster_id
+                    }
 
-        # 散布図
-        st.subheader("スコア相関")
-        if 'C-value' in df.columns and 'TF-IDF' in df.columns:
-            fig_scatter = px.scatter(
-                df,
-                x='C-value',
-                y='TF-IDF',
-                size='出現頻度',
-                color='総合スコア',
-                hover_data=['専門用語'],
-                title="C-value vs TF-IDF",
-                color_continuous_scale='viridis'
-            )
-            st.plotly_chart(fig_scatter, use_responsive_container_width=True)
-
-    with tab3:
-        st.subheader("データエクスポート")
-
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
-            # CSV形式
-            csv = df.to_csv(index=True, encoding='utf-8-sig')
-            st.download_button(
-                label="📥 CSVダウンロード",
-                data=csv,
-                file_name=f"terms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-
-        with col2:
-            # JSON形式
-            import json
-            json_str = json.dumps(results, ensure_ascii=False, indent=2)
-            st.download_button(
-                label="📥 JSONダウンロード",
-                data=json_str,
-                file_name=f"terms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json"
-            )
-
-        with col3:
-            # 上位用語のみテキスト形式
-            text_output = "\n".join([f"{i+1}. {t['term']} ({t['score']:.3f})"
-                                    for i, t in enumerate(results[:20])])
-            st.download_button(
-                label="📥 上位20語（テキスト）",
-                data=text_output,
-                file_name=f"top_terms_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                mime="text/plain"
-            )
-
-        # プレビュー
-        with st.expander("エクスポートデータのプレビュー"):
-            st.code(text_output, language=None)
+                json_str = json.dumps(hierarchy_dict, ensure_ascii=False, indent=2)
+                st.download_button(
+                    label="📥 階層的クラスタ (JSON)",
+                    data=json_str,
+                    file_name=f"hierarchy_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                    mime="application/json"
+                )
 
 # フッター
 st.divider()
 st.markdown(
     """
     <div style='text-align: center; color: gray;'>
-    専門用語辞書自動構築システム v1.0 |
+    専門用語辞書自動構築システム v4.0 (TF-IDF + C-value + SemRe-Rank + RAG + HDBSCAN) |
     <a href='https://github.com/uchi736/Dictionary-of-Technical-Terms' target='_blank'>GitHub</a>
     </div>
     """,
