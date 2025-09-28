@@ -165,7 +165,7 @@ patterns = [
 
 ##### 1.2 SudachiPy形態素解析
 
-連続する名詞を連結し、複合語を抽出：
+連続する名詞を連結し、自然な複合語を抽出：
 
 ```python
 def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
@@ -179,25 +179,20 @@ def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
             current_phrase.append(token.surface())
         else:
             if current_phrase:
-                # 名詞句全体を追加
+                # 名詞句全体のみを追加（部分列生成はn-gramに任せる）
                 phrase = ''.join(current_phrase)
                 candidates[phrase] += 1
-
-                # 後方suffix生成
-                if len(current_phrase) > 2:
-                    for i in range(1, len(current_phrase)):
-                        sub_phrase = ''.join(current_phrase[i:])
-                        candidates[sub_phrase] += 1
 ```
 
 **例**:
 - 入力: "舶用アンモニア燃料エンジン"
 - 形態素解析: ["舶用", "アンモニア", "燃料", "エンジン"]
 - 抽出結果:
-  - "舶用アンモニア燃料エンジン" (全体)
-  - "アンモニア燃料エンジン" (suffix)
-  - "燃料エンジン" (suffix)
-  - "エンジン" (suffix)
+  - "舶用アンモニア燃料エンジン" (全体のみ)
+
+**設計方針**:
+- 連続名詞の自然な区切りで複合語を抽出
+- 部分列（"アンモニア燃料"など）はn-gramで生成するため重複を避ける
 
 ##### 1.3 n-gram複合語生成
 
@@ -222,18 +217,24 @@ def _generate_ngram_candidates(self, text: str) -> Dict[str, int]:
   - 2-gram: "舶用アンモニア", "アンモニア燃料", "燃料エンジン", "エンジン開発"
   - 3-gram: "舶用アンモニア燃料", "アンモニア燃料エンジン", "燃料エンジン開発"
 
-##### 1.4 3手法の統合効果
+##### 1.4 3手法の統合効果と役割分担
 
 | 手法 | 抽出範囲 | 特徴 |
 |------|---------|------|
 | 正規表現 | 基本パターン | 高速、単純な文字種マッチング |
-| SudachiPy | 自然な複合語 + 後方suffix | 言語学的に正しい単位 |
-| n-gram | あらゆる組み合わせ | 網羅性最大、意外な複合語も発見 |
+| SudachiPy | 自然な複合語全体 | 形態素解析による言語学的に正しい区切り |
+| n-gram | あらゆる部分列 | 網羅性最大、前方・中間・後方すべてカバー |
+
+**役割分担**:
+- **正規表現**: 文字種の連続パターンを高速抽出
+- **SudachiPy**: 形態素解析で自然な複合語の境界を判定（例: "舶用アンモニア燃料エンジン"を一つの単位として認識）
+- **n-gram**: 複合語の部分列を体系的に生成（例: "舶用アンモニア", "アンモニア燃料", "燃料エンジン"）
 
 **統合の理由**:
-- 正規表現だけでは複合語の分解が不十分
-- SudachiPyだけでは連続しない組み合わせを拾えない
-- n-gramで最大限の候補を生成し、後段の統計的手法で自然にフィルタリング
+- 正規表現だけでは複合語の中間部分を抽出できない
+- SudachiPyだけでは部分列を見逃す
+- n-gramで最大限の候補を生成し、後段の統計的手法（TF-IDF/C-value/SemRe-Rank）で自然にフィルタリング
+- **重複を避ける設計**: SudachiPyは全体のみ、n-gramで部分列生成を一元化
 
 ##### 1.5 数字のみフィルタ
 
@@ -1304,15 +1305,15 @@ candidates.update(extract_with_sudachi(text))  # 後方suffixのみ
 #### V4の修正
 
 ```python
-# V4: 3手法統合
+# V4: 3手法統合（役割分担で重複削減）
 # 1. 正規表現（5パターン）
 candidates = extract_by_regex(text)
 
-# 2. SudachiPy形態素解析 + 後方suffix
+# 2. SudachiPy形態素解析（全体のみ、suffixなし）
 if self.use_sudachi:
     candidates.update(extract_candidates_with_sudachi(text))
 
-# 3. n-gram複合語生成（新規）
+# 3. n-gram複合語生成（部分列を一元管理）
 if self.use_ngram_generation:
     candidates.update(generate_ngram_candidates(text))
 ```
@@ -1320,12 +1321,13 @@ if self.use_ngram_generation:
 **例**: "舶用アンモニア燃料エンジン開発"
 - V4抽出:
   - 正規表現: "舶用アンモニア燃料エンジン開発" (全体)
-  - SudachiPy: "アンモニア燃料エンジン開発", "燃料エンジン開発", "エンジン開発"
-  - n-gram: "舶用アンモニア", "アンモニア燃料", "燃料エンジン", "エンジン開発", "舶用アンモニア燃料", "アンモニア燃料エンジン"
+  - SudachiPy: "舶用アンモニア燃料エンジン開発" (全体のみ、重複)
+  - n-gram: "舶用アンモニア", "アンモニア燃料", "燃料エンジン", "エンジン開発", "舶用アンモニア燃料", "アンモニア燃料エンジン", "燃料エンジン開発"
 
 効果:
 - ✅ 漢字+カタカナ+漢字パターン追加（5パターン）
-- ✅ n-gramで最大限の複合語候補を生成
+- ✅ n-gramで部分列生成を一元化（前方・中間・後方すべてカバー）
+- ✅ SudachiPyとn-gramの重複削減（suffixを削除）
 - ✅ 見逃しを最小化
 - ✅ 過剰抽出は統計的手法で自然にフィルタリング
 

@@ -380,6 +380,7 @@ class EnhancedTermExtractorV4(BaseExtractor):
     def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
         """
         SudachiPyによる形態素解析ベースの候補語抽出
+        連続名詞を連結するのみ（部分列生成はn-gramに任せる）
 
         Returns:
             {用語: 出現頻度}
@@ -401,17 +402,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
                 current_phrase.append(token.surface())
             else:
                 if current_phrase:
-                    # 名詞句全体を追加
+                    # 名詞句全体のみを追加（後方suffixは削除）
                     phrase = ''.join(current_phrase)
                     if self.min_term_length <= len(phrase) <= self.max_term_length:
                         candidates[phrase] += 1
-
-                    # 後方suffix生成（部分的な組み合わせ）
-                    if len(current_phrase) > 2:
-                        for i in range(1, len(current_phrase)):
-                            sub_phrase = ''.join(current_phrase[i:])
-                            if self.min_term_length <= len(sub_phrase) <= self.max_term_length:
-                                candidates[sub_phrase] += 1
 
                     current_phrase = []
 
