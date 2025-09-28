@@ -541,6 +541,8 @@ def extract_synonym_hierarchy(
     config: Optional[Config] = None,
     min_cluster_size: int = 2,
     generate_category_names: bool = True,
+    use_umap: bool = False,
+    umap_n_components: int = 50,
     verbose: bool = True
 ) -> Dict[str, SynonymHierarchy]:
     """
@@ -551,6 +553,8 @@ def extract_synonym_hierarchy(
         config: 設定
         min_cluster_size: 最小クラスタサイズ
         generate_category_names: LLMでカテゴリ名を生成するか
+        use_umap: UMAP次元削減を使用するか
+        umap_n_components: UMAP削減後の次元数
         verbose: 進捗表示
 
     Returns:
@@ -558,7 +562,9 @@ def extract_synonym_hierarchy(
     """
     extractor = HierarchicalSynonymExtractor(
         config=config,
-        min_cluster_size=min_cluster_size
+        min_cluster_size=min_cluster_size,
+        use_umap=use_umap,
+        umap_n_components=umap_n_components
     )
 
     return extractor.extract_hierarchy(

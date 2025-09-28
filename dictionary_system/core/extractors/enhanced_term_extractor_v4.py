@@ -105,7 +105,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
         enable_synonym_hierarchy: bool = True,
         top_n_definition: int = 30,
         min_cluster_size: int = 2,
-        generate_category_names: bool = True
+        generate_category_names: bool = True,
+        # UMAP次元削減
+        use_umap: bool = False,
+        umap_n_components: int = 50
     ):
         """
         初期化
@@ -150,6 +153,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
         self.top_n_definition = top_n_definition
         self.min_cluster_size = min_cluster_size
         self.generate_category_names = generate_category_names
+
+        # UMAP設定
+        self.use_umap = use_umap
+        self.umap_n_components = umap_n_components
 
         # Azure OpenAI初期化
         if use_azure_openai:
@@ -281,6 +288,8 @@ class EnhancedTermExtractorV4(BaseExtractor):
                 terms,
                 min_cluster_size=self.min_cluster_size,
                 generate_category_names=self.generate_category_names,
+                use_umap=self.use_umap,
+                umap_n_components=self.umap_n_components,
                 verbose=False
             )
             # 階層情報をメタデータに追加
