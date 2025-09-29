@@ -251,7 +251,12 @@ class EnhancedTermExtractorV4(BaseExtractor):
 
         # STEP 3.6: 早期フィルタリング（下位20%除外）
         logger.info("STEP 3.6: Early filtering (removing bottom 20%)")
-        base_scores = self._early_filtering(base_scores, percentile_threshold=20)
+        # クラスタリング用に最低限の用語数を確保（最小20件は残す）
+        min_terms_for_clustering = max(20, self.min_cluster_size * 10)
+        if len(base_scores) > min_terms_for_clustering:
+            base_scores = self._early_filtering(base_scores, percentile_threshold=20)
+        else:
+            logger.info(f"Skipping early filtering to preserve terms for clustering ({len(base_scores)} terms)")
 
         # STEP 3.7: 粗い部分文字列フィルタ（50%以下除外）
         logger.info("STEP 3.7: Coarse substring filtering (50% threshold)")
@@ -281,6 +286,7 @@ class EnhancedTermExtractorV4(BaseExtractor):
         logger.info(f"After filtering: {len(terms)} terms")
 
         # STEP 6.7: 階層的類義語抽出（早期実行）
+        # 注: フィルタリング前の用語数で判定（フィルタ後は少なすぎる可能性があるため）
         if self.enable_synonym_hierarchy and len(terms) >= self.min_cluster_size:
             logger.info("STEP 6.7: Hierarchical clustering (early)")
             self.hierarchy = extract_synonym_hierarchy(
