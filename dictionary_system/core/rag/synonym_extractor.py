@@ -572,3 +572,101 @@ def extract_synonym_hierarchy(
         generate_category_names=generate_category_names,
         verbose=verbose
     )
+
+def generate_cluster_category_names(
+    hierarchy: Dict[str, SynonymHierarchy],
+    terms: List[Term],
+    config: Optional[Config] = None,
+    llm_model: str = "gpt-4.1-mini",
+    verbose: bool = True
+) -> Dict[str, SynonymHierarchy]:
+    """
+    クラスタにカテゴリ名を生成（スタンドアロン関数）
+    
+    Args:
+        hierarchy: クラスタ階層情報
+        terms: 専門用語リスト（定義付き）
+        config: 設定
+        llm_model: LLMモデル名
+        verbose: 進捗表示
+        
+    Returns:
+        カテゴリ名が付与された階層情報
+    """
+    if not hierarchy:
+        return hierarchy
+        
+    config = config or Config()
+    
+    # LLM初期化
+    from langchain_openai import AzureChatOpenAI
+    from langchain_core.prompts import ChatPromptTemplate
+    from langchain_core.output_parsers import StrOutputParser
+    from dictionary_system.config.prompts import get_category_naming_prompt_messages
+    import json
+    
+    llm = AzureChatOpenAI(
+        azure_endpoint=config.azure_openai_endpoint,
+        api_key=config.azure_openai_api_key,
+        api_version=config.azure_openai_api_version,
+        azure_deployment=llm_model,
+        temperature=0.1,
+        max_tokens=500
+    )
+    
+    term_dict = {t.term: t for t in terms}
+    
+    prompt = ChatPromptTemplate.from_messages(
+        get_category_naming_prompt_messages()
+    )
+    chain = prompt | llm | StrOutputParser()
+    
+    if verbose:
+        print(f"カテゴリ名生成: {len(hierarchy)}クラスタ")
+    
+    for i, (rep, node) in enumerate(hierarchy.items(), 1):
+        if verbose and i % 5 == 0:
+            print(f"  {i}/{len(hierarchy)}件処理中...")
+        
+        # このクラスタの用語と定義を取得
+        terms_with_defs = []
+        for term_name in node.terms:
+            if term_name in term_dict:
+                term = term_dict[term_name]
+                terms_with_defs.append(
+                    f"用語: {term.term}\n定義: {(term.definition or '')[:200]}"
+                )
+        
+        if not terms_with_defs:
+            continue
+            
+        terms_text = "\n\n".join(terms_with_defs)
+        
+        try:
+            result_text = chain.invoke({
+                "terms_with_definitions": terms_text
+            })
+            
+            # JSON解析
+            result_text = result_text.strip()
+            if result_text.startswith("```json"):
+                result_text = result_text[7:]
+            if result_text.startswith("```"):
+                result_text = result_text[3:]
+            if result_text.endswith("```"):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+            
+            result = json.loads(result_text)
+            
+            if result:
+                node.category_name = result.get("category", "")
+                node.category_confidence = result.get("confidence", 0.0)
+                node.category_reason = result.get("reason", "")
+        except Exception as e:
+            if verbose:
+                print(f"  カテゴリ名生成エラー: {e}")
+            node.category_name = f"クラスタ{node.cluster_id}"
+            node.category_confidence = 0.0
+    
+    return hierarchy

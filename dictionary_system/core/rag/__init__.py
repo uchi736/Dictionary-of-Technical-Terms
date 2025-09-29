@@ -41,7 +41,8 @@ from dictionary_system.core.rag.synonym_extractor import (
     extract_synonym_groups,
     HierarchicalSynonymExtractor,
     SynonymHierarchy,
-    extract_synonym_hierarchy
+    extract_synonym_hierarchy,
+    generate_cluster_category_names
 )
 
 __all__ = [
@@ -64,5 +65,6 @@ __all__ = [
     "extract_synonym_groups",
     "HierarchicalSynonymExtractor",
     "SynonymHierarchy",
-    "extract_synonym_hierarchy"
+    "extract_synonym_hierarchy",
+    "generate_cluster_category_names"
 ]
