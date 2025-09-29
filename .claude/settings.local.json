@@ -6,7 +6,15 @@
       "Bash(uvx:*)",
       "Bash(mkdir:*)",
       "Bash(python test:*)",
-      "mcp__sequential-thinking__sequentialthinking"
+      "mcp__sequential-thinking__sequentialthinking",
+      "Bash(git add:*)",
+      "mcp__serena__search_for_pattern",
+      "Bash(timeout:*)",
+      "Bash(python:*)",
+      "Bash(git commit:*)",
+      "mcp__serena__activate_project",
+      "mcp__serena__find_symbol",
+      "mcp__serena__insert_after_symbol"
     ]
   },
   "enableAllProjectMcpServers": true,

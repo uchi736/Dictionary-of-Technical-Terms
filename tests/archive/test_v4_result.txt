@@ -1,0 +1,216 @@
+2025-09-28 00:13:55,740 INFO: LangSmith tracing enabled - Project: term-extraction
+2025-09-28 00:13:57,443 INFO: Azure OpenAI initialized
+2025-09-28 00:13:57,478 INFO: SudachiPy initialized
+2025-09-28 00:13:57,478 INFO: === V4 Term Extraction Started ===
+2025-09-28 00:13:57,478 INFO: STEP 1: Candidate extraction
+2025-09-28 00:13:57,487 INFO: Extracted 245 candidates
+2025-09-28 00:13:57,487 INFO: STEP 2: TF-IDF calculation
+2025-09-28 00:13:57,492 INFO: STEP 3: C-value calculation
+2025-09-28 00:13:57,495 INFO: STEP 4-6: SemRe-Rank algorithm
+2025-09-28 00:13:57,498 INFO: Selected 5 seed terms
+2025-09-28 00:13:57,536 INFO: Graph: 245 nodes, 185 edges
+2025-09-28 00:13:57,541 INFO: Extracted 245 terms
+2025-09-28 00:13:57,541 INFO: STEP 7: RAG definition generation
+2025-09-28 00:14:00,524 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,404 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,694 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,925 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,929 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,935 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,942 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,950 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,960 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,962 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,964 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,970 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,972 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,981 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:01,987 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,281 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,433 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,487 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,510 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,578 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,585 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,612 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,656 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,657 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,661 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,662 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,688 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,698 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,766 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,810 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:02,838 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,257 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,332 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,517 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,524 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,540 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,552 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,697 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,702 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,706 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:04,713 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:05,058 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:05,114 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,380 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,412 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,445 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,655 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,688 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,744 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,808 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:06,838 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:07,123 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:07,173 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:07,382 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:07,808 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:08,032 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:08,428 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:08,450 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:08,695 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:08,747 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:09,010 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:10,575 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,576 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,578 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,579 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,589 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,590 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,594 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,594 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,595 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,596 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,601 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,602 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,602 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,603 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,604 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,604 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:10,725 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:10,726 INFO: Retrying request to /chat/completions in 54.000000 seconds
+2025-09-28 00:14:11,371 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:11,558 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:11,629 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:14:13,410 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:13,421 INFO: Retrying request to /chat/completions in 51.000000 seconds
+2025-09-28 00:14:13,585 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:13,586 INFO: Retrying request to /chat/completions in 51.000000 seconds
+2025-09-28 00:14:13,672 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 429 Too Many Requests"
+2025-09-28 00:14:13,673 INFO: Retrying request to /chat/completions in 51.000000 seconds
+2025-09-28 00:15:05,793 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:05,813 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:05,853 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,000 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,010 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,012 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,022 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,219 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,411 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,595 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:06,657 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:07,906 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,137 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,165 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,384 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,406 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,504 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,650 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:08,850 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:09,012 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:09,021 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:09,302 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:09,466 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:10,406 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:10,414 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:10,566 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:11,234 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:13,093 INFO: STEP 8: LLM technical term filtering
+2025-09-28 00:15:16,403 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:19,016 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:21,402 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:23,082 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:25,325 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:27,292 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:29,787 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:32,299 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:35,213 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:36,908 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:38,891 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:40,873 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:42,641 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:45,525 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:47,520 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:49,718 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:51,372 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:52,647 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:15:54,722 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:07,009 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:09,187 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:11,310 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:12,693 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:14,570 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:16,929 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:18,857 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:21,100 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:23,165 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:25,367 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:27,547 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:27,553 INFO: STEP 9: Hierarchical synonym extraction
+2025-09-28 00:16:30,465 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+C:\work\RAG\Dictionary of Technical Terms\myenv\Lib\site-packages\sklearn\utils\deprecation.py:132: FutureWarning: 'force_all_finite' was renamed to 'ensure_all_finite' in 1.6 and will be removed in 1.8.
+  warnings.warn(
+C:\work\RAG\Dictionary of Technical Terms\myenv\Lib\site-packages\sklearn\utils\deprecation.py:132: FutureWarning: 'force_all_finite' was renamed to 'ensure_all_finite' in 1.6 and will be removed in 1.8.
+  warnings.warn(
+2025-09-28 00:16:33,955 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:35,364 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:37,452 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:39,903 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:41,877 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-28 00:16:44,737 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+Warning: MeCab not available. Using simple tokenization.
+======================================================================
+V4 エンドツーエンドテスト
+======================================================================
+
+PDF: dictionary_system\input\舶用アンモニア機関の開発と実船実証.pdf
+抽出テキスト: 5098文字
+
+======================================================================
+V4実行: TF-IDF + C-value + SemRe-Rank + RAG + フィルタリング + 階層
+======================================================================
+
+専門用語抽出中...
+
+最終結果: 30件の専門用語
+
+[OK] Top 20 terms:
+   1. アンモニア                          (score: 2.6300)
+   2. アンモニア燃料                        (score: 1.1183)
+   3. 燃料                             (score: 0.8264)
+   4. エンジン                           (score: 0.8092)
+   5. GHG                            (score: 0.3161)
+   6. アンモニアガス                        (score: 0.0552)
+   7. アンモニアモード                       (score: 0.0516)
+   8. アンモニア濃度                        (score: 0.0381)
+   9. ガス                             (score: 0.0258)
+  10. アンモニア臭                         (score: 0.0252)
+  11. 燃料船                            (score: 0.0242)
+  12. アンモニア燃料船                       (score: 0.0204)
+  13. 本エンジン                          (score: 0.0181)
+  14. アンモニア燃焼                        (score: 0.0174)
+  15. アンモニア輸送船                       (score: 0.0155)
+  16. アンモニ                           (score: 0.0137)
+  17. 燃料全部                           (score: 0.0133)
+  18. エンジン周囲                         (score: 0.0098)
+  19. アンモ                            (score: 0.0097)
+  20. エンジン内                          (score: 0.0097)
+
+[OK] Terms with definitions: 30
+
+[OK] Definition samples:
+Traceback (most recent call last):
+  File "C:\work\RAG\Dictionary of Technical Terms\test_v4_e2e.py", line 63, in <module>
+    print(f"  {i}. {term.term}: {def_text}...")
+UnicodeEncodeError: 'cp932' codec can't encode character '\u2083' in position 32: illegal multibyte sequence

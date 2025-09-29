@@ -1,0 +1,96 @@
+2025-09-27 15:18:31,952 INFO: LangSmith tracing enabled - Project: term-extraction
+2025-09-27 15:18:34,241 INFO: Using Azure OpenAI Embeddings (text-embedding-3-small)
+2025-09-27 15:18:34,245 INFO: Elbow detected at position 5 (min=5, max=35)
+2025-09-27 15:18:34,246 INFO: Selected 5 seed terms
+2025-09-27 15:18:35,504 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:38,592 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,875 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,880 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,887 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,898 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,906 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,918 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,936 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,945 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,947 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,971 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:40,978 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:41,257 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:41,362 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:41,393 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:42,003 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/text-embedding-3-small/embeddings?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,261 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,290 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,310 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,335 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,338 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,340 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,347 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,350 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,364 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,529 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,538 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:43,561 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:44,444 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:44,496 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:44,826 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,812 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,824 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,825 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,842 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,879 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,881 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,904 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,906 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,909 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,935 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,963 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:45,965 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:47,781 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:48,007 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+2025-09-27 15:18:48,055 INFO: HTTP Request: POST https://uchiwaapi.openai.azure.com/openai/deployments/gpt-4o/chat/completions?api-version=2024-12-01-preview "HTTP/1.1 200 OK"
+Warning: MeCab not available. Using simple tokenization.
+======================================================================
+階層的類義語抽出テスト（HDBSCAN）
+======================================================================
+
+【STEP 1】専門用語抽出 (SemRe-Rank)
+----------------------------------------------------------------------
+抽出された専門用語: 19件
+
+上位15件:
+   1. 燃料                             (Score: 2.0000)
+   2. アンモニア                          (Score: 1.2740)
+   3. アンモニア燃料                        (Score: 1.1021)
+   4. エンジン                           (Score: 0.9565)
+   5. ディーゼルエンジン                      (Score: 0.5759)
+   6. モーター                           (Score: 0.3986)
+   7. アンモニアエンジン                      (Score: 0.3796)
+   8. 舶用                             (Score: 0.3796)
+   9. 燃料エンジン                         (Score: 0.3651)
+  10. 電動機                            (Score: 0.3537)
+  11. 実用化                            (Score: 0.3444)
+  12. レシプロエンジン                       (Score: 0.3210)
+  13. システム                           (Score: 0.3210)
+  14. 注目                             (Score: 0.3210)
+  15. 従来                             (Score: 0.3210)
+
+======================================================================
+【STEP 2】定義自動生成 (RAG)
+======================================================================
+テキストをインデックス化中...
+定義生成開始...
+
+バッチ処理: 15件
+
+定義付き用語（上位5件）:
+
+1. 【燃料】
+   定義: **燃料**:  
+燃料とは、エネルギーを発生させるために燃焼や化学反応に利用される物質のことを指します。具体的には、熱や動力を得るために使用される固体、液体、または気体のエネルギー源であり、石油、ガ...
+
+2. 【アンモニア】
+Traceback (most recent call last):
+  File "C:\work\RAG\Dictionary of Technical Terms\test_hierarchical_synonyms.py", line 76, in <module>
+    print(f"   定義: {term.definition[:100]}...")
+UnicodeEncodeError: 'cp932' codec can't encode character '\u2083' in position 29: illegal multibyte sequence

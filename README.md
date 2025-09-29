@@ -8,14 +8,15 @@ PDFドキュメントから専門用語を自動抽出し、RAGによる定義�
 
 ## 特徴
 - 📄 PDFからの自動テキスト抽出
-- 🔬 **3手法統合抽出**: 正規表現（5パターン）+ SudachiPy形態素解析 + n-gram複合語生成
+- 🔬 **3手法統合抽出**: 正規表現（型式番号対応）+ SudachiPy形態素解析 + n-gram複合語生成
 - 🎯 **SemRe-Rank**: 意味的関連性 + Personalized PageRankによる高精度抽出
-- 🤖 **RAG定義生成**: BM25 + ベクトル検索 + LLMによる自動定義付与
-- ⚡ **LCEL対応**: LangChain Expression Languageによる宣言的パイプライン
-- 🌐 **汎用性**: ドメイン非依存、統計的手法のみでフィルタリング
-- 🔍 Azure OpenAI Embeddings (text-embedding-3-small) 対応
+- 🤖 **RAG定義生成**: BM25（SudachiPy）+ ベクトル検索 + LLMによる自動定義付与
+- ⚡ **高速バッチ処理**: LLM判定のバッチ処理により3分→30秒に短縮
+- 🌐 **改善されたフィルタリング**: ゴミ用語・一般名詞除外 + 型式番号保護
+- 🔍 Azure OpenAI (gpt-4.1-mini/text-embedding-3-small) 対応
 - 📊 ハイブリッド検索（BM25 + pgvector）による高精度RAG
 - 🏗️ **階層的類義語抽出**: HDBSCAN + LLMによるカテゴリ命名
+- 📝 **見出し重視**: ドキュメントヘッダーからの用語に2倍ボーナス
 
 ## システム構成
 
@@ -205,13 +206,15 @@ results = await pipeline.abatch(texts)
    - カタカナ、漢字、英数字、混合パターン
    - 型番完全抽出（例: "6L28ADF"）
 
-2. **SudachiPy形態素解析**
-   - 連続名詞の自動連結（全体のみ）
+2. **SudachiPy形態素解析（Mode C）**
+   - 長単位での複合語保持
+   - 連続名詞の自動連結
    - 形態素の自然な境界を判定
 
-3. **n-gram複合語生成**
-   - 2-gram〜max_ngramの組み合わせ
-   - 部分列を体系的に生成（前方・中間・後方すべてカバー）
+3. **n-gram複合語生成（Mode A）**
+   - Mode Aで細かく分割してから結合
+   - 文境界を考慮（句読点で区切り）
+   - 連続する名詞のみを対象
    - 例: "舶用アンモニア", "アンモニア燃料", "燃料エンジン"
 
 ### SemRe-Rank アルゴリズム
@@ -304,18 +307,11 @@ PostgreSQL + pgvector 拡張が必要です：
 CREATE EXTENSION IF NOT EXISTS vector;
 ```
 
-### MeCab エラー
-BM25 で MeCab を使用する場合：
-```bash
-# Windows
-pip install mecab-python3
-# Windowsの場合は別途MeCabのインストールが必要
-
-# Linux/Mac
-pip install mecab-python3
-```
-
-MeCab がなくても動作します（文字単位のトークン化にフォールバック）。
+### SudachiPy について
+BM25検索とn-gram生成で使用：
+- **Mode C（長単位）**: 既存の複合語を保持（BM25、候補抽出）
+- **Mode A（短単位）**: 細かい形態素単位（n-gram生成）
+- MeCabからSudachiPyに移行済み（より高精度な日本語処理）
 
 ## 主要依存パッケージ
 - **LangChain**: LCEL パイプライン、RAG統合
@@ -337,7 +333,14 @@ MIT License
 uchi736
 
 ## 更新履歴
-- 2025.01: **V4リリース** - 3手法統合候補抽出（正規表現5パターン + SudachiPy + n-gram）、階層的類義語抽出、汎用性向上
+- 2025.01.31: **最新改善**
+  - SudachiPy Mode A/Cハイブリッド実装（不自然な複合語を防止）
+  - LLM専門用語判定プロンプトを間接的表現に改善
+  - ゴミ用語・一般名詞フィルタリング強化
+  - 型式番号パターン拡張（全角チルダ対応）
+  - バッチ処理による高速化（3分→30秒）
+  - 部分文字列フィルタ強化（10%→30%閾値）
+- 2025.01: **V4リリース** - 3手法統合候補抽出、階層的類義語抽出、汎用性向上
 - 2025.01: SemRe-Rank + RAG定義生成 + LCEL対応（メジャーアップデート）
 - 2024.01: 見出し検出機能と条件付きフィルタリング追加
 - 2024.01: 初版リリース
