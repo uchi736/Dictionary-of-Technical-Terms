@@ -386,7 +386,7 @@ class EnhancedTermExtractorV4(BaseExtractor):
             candidates.update(ngram_candidates)
 
         # 4. 見出しから抽出
-        heading_terms = self._extract_headings(text)
+        heading_terms = self._extract_header_terms(text)
         for term in heading_terms:
             if term not in candidates:
                 candidates[term] = 1
