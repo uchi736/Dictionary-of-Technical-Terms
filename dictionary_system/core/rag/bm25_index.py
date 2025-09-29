@@ -47,6 +47,10 @@ class BM25Index:
         self.b = b
         self.use_sudachi = SUDACHI_AVAILABLE
 
+        # スレッドセーフティのためのロック
+        import threading
+        self._lock = threading.Lock()
+
         if self.use_sudachi:
             try:
                 self.sudachi_tokenizer = dictionary.Dictionary().create()
@@ -72,12 +76,18 @@ class BM25Index:
             トークンのリスト
         """
         if self.use_sudachi:
-            tokens = self.sudachi_tokenizer.tokenize(text, self.sudachi_mode)
-            return [token.surface() for token in tokens]
+            # スレッドセーフティのため、ロックを使用
+            with self._lock:
+                try:
+                    tokens = self.sudachi_tokenizer.tokenize(text, self.sudachi_mode)
+                    return [token.surface() for token in tokens]
+                except:
+                    # フォールバック: SudachiPyが失敗したら文字分割
+                    tokens = list(text.replace(" ", ""))
+                    return [t for t in tokens if t.strip()]
         else:
             tokens = list(text.replace(" ", ""))
-
-        return [t for t in tokens if t.strip()]
+            return [t for t in tokens if t.strip()]
 
     def add_documents(
         self,
