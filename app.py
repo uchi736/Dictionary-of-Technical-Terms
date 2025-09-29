@@ -67,7 +67,30 @@ with st.sidebar:
 
     st.subheader("📖 定義生成 (RAG)")
     enable_definition = st.checkbox("定義生成を有効化", value=True)
-    top_n_definition = st.slider("定義生成数", 10, 100, 30, 10) if enable_definition else None
+    if enable_definition:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            definition_percentage = st.slider(
+                "定義生成割合(%)",
+                10, 50, 25, 5,
+                help="候補の上位何%に定義を生成するか"
+            )
+        with col2:
+            min_definitions = st.number_input(
+                "最小定義生成数",
+                min_value=10, max_value=30, value=15, step=5,
+                help="文書が短い場合でも最低限生成する数"
+            )
+        with col3:
+            max_definitions = st.number_input(
+                "最大定義生成数",
+                min_value=30, max_value=100, value=50, step=10,
+                help="処理時間制御のための上限"
+            )
+        # V4では内部で動的計算するので、この値は使わない
+        top_n_definition = max_definitions
+    else:
+        top_n_definition = None
 
     st.subheader("🔍 LLM専門用語判定")
     enable_filtering = st.checkbox("専門用語フィルタリングを有効化", value=True)

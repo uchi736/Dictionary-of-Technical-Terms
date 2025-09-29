@@ -229,6 +229,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
         if not candidates:
             return []
 
+        # STEP 1.5: 見出し用語抽出（新規）
+        logger.info("STEP 1.5: Header term extraction")
+        header_terms = self._extract_header_terms(text)
+
         # STEP 2: TF-IDF計算 (V3継承)
         logger.info("STEP 2: TF-IDF calculation")
         terms_list = list(candidates.keys())
@@ -245,34 +249,25 @@ class EnhancedTermExtractorV4(BaseExtractor):
             cval = cvalue_scores.get(term, 0.0)
             base_scores[term] = 0.7 * tfidf + 0.3 * cval
 
+        # STEP 3.3: 見出しボーナス適用（新規）
+        logger.info("STEP 3.3: Applying header bonus")
+        base_scores = self._apply_header_bonus(base_scores, header_terms)
+
         # STEP 3.5: 複合度ボーナス適用
         logger.info("STEP 3.5: Applying complexity bonus")
         base_scores = self._apply_complexity_bonus(base_scores)
 
-        # STEP 3.6: 早期フィルタリング（下位20%除外）
-        logger.info("STEP 3.6: Early filtering (removing bottom 20%)")
-        # クラスタリング用に最低限の用語数を確保（最小20件は残す）
-        min_terms_for_clustering = max(20, self.min_cluster_size * 10)
-        if len(base_scores) > min_terms_for_clustering:
-            base_scores = self._early_filtering(base_scores, percentile_threshold=20)
-        else:
-            logger.info(f"Skipping early filtering to preserve terms for clustering ({len(base_scores)} terms)")
-
-        # STEP 3.7: 粗い部分文字列フィルタ（50%以下除外）
-        logger.info("STEP 3.7: Coarse substring filtering (50% threshold)")
-        base_scores = self._filter_substring_duplicates(base_scores, score_ratio_threshold=0.5)
-
-        # STEP 4-6: SemRe-Rankアルゴリズム（フィルタ後の用語のみ）
+        # STEP 4-6: SemRe-Rankアルゴリズム
         logger.info("STEP 4-6: SemRe-Rank algorithm")
-        filtered_terms = list(base_scores.keys())
+        terms_list = list(base_scores.keys())
         final_scores = self._semrerank_scoring(
-            filtered_terms,
+            terms_list,
             base_scores
         )
 
-        # STEP 6.5: 精密な部分文字列フィルタリング (20%以下除外)
-        logger.info("STEP 6.5: Fine substring filtering (20% threshold)")
-        final_scores = self._filter_substring_duplicates(final_scores, score_ratio_threshold=0.2)
+        # STEP 6.5: 軽い部分文字列フィルタリング (10%以下の明らかな重複のみ除外)
+        logger.info("STEP 6.5: Light substring filtering (10% threshold)")
+        final_scores = self._filter_substring_duplicates(final_scores, score_ratio_threshold=0.1)
 
         # Term オブジェクトに変換
         terms = [
@@ -285,63 +280,68 @@ class EnhancedTermExtractorV4(BaseExtractor):
 
         logger.info(f"After filtering: {len(terms)} terms")
 
-        # STEP 6.7: 階層的類義語抽出（早期実行）
-        # 注: フィルタリング前の用語数で判定（フィルタ後は少なすぎる可能性があるため）
-        if self.enable_synonym_hierarchy and len(terms) >= self.min_cluster_size:
-            logger.info("STEP 6.7: Hierarchical clustering (early)")
+        # 定義生成数を動的に計算
+        definition_count = self._calculate_definition_count(len(terms))
+
+        # STEP 7: RAG定義生成 (上位N件)
+        if self.enable_definition_generation:
+            logger.info(f"STEP 7: RAG definition generation (top {definition_count} terms)")
+            terms_for_definition = terms[:definition_count]
+            terms_with_definition = enrich_terms_with_definitions(
+                terms=terms_for_definition,
+                text=text,
+                verbose=False
+            )
+            # 定義生成されなかった残りの用語と結合
+            terms = terms_with_definition + terms[definition_count:]
+
+        # STEP 8: LLM専門用語判定（定義がある用語のみ）
+        if self.enable_definition_filtering:
+            logger.info("STEP 8: LLM technical term filtering")
+            # 定義がある用語のみフィルタリング
+            terms_with_def = [t for t in terms if t.definition]
+            technical_terms = filter_technical_terms_by_definition(
+                terms_with_def,
+                verbose=False
+            )
+        else:
+            technical_terms = terms[:definition_count]  # 定義生成した分のみ
+
+        # STEP 9: 階層的類義語抽出（専門用語確定後）
+        if self.enable_synonym_hierarchy and len(technical_terms) >= self.min_cluster_size:
+            logger.info(f"STEP 9: Hierarchical clustering ({len(technical_terms)} technical terms)")
             self.hierarchy = extract_synonym_hierarchy(
-                terms,
+                technical_terms,
                 min_cluster_size=self.min_cluster_size,
-                generate_category_names=False,  # まだ定義がないのでカテゴリ名生成は後回し
+                generate_category_names=False,
                 use_umap=self.use_umap,
                 umap_n_components=self.umap_n_components,
                 verbose=False
             )
-
-            # STEP 6.8: クラスタ内フィルタリング (新規)
-            logger.info("STEP 6.8: Within-cluster filtering")
-            terms = self._filter_terms_within_clusters(terms, self.hierarchy)
         else:
             self.hierarchy = None
+            logger.info(f"Skipping clustering: only {len(technical_terms)} terms (min={self.min_cluster_size})")
 
-        # STEP 7: RAG定義生成 (フィルタ後の用語のみ)
-        if self.enable_definition_generation:
-            logger.info("STEP 7: RAG definition generation")
-            terms = enrich_terms_with_definitions(
-                terms=terms,
-                text=text,
-                top_n=self.top_n_definition,
-                verbose=False
-            )
-
-        # STEP 8: カテゴリ名生成（定義生成後）
+        # STEP 10: カテゴリ名生成（クラスタリング後）
         if self.hierarchy and self.generate_category_names:
-            logger.info("STEP 8: Category name generation")
+            logger.info("STEP 10: Category name generation")
             from dictionary_system.core.rag.synonym_extractor import generate_cluster_category_names
             self.hierarchy = generate_cluster_category_names(
                 self.hierarchy,
-                terms,
+                technical_terms,
                 verbose=False
             )
 
-        # STEP 9: 階層情報をメタデータに追加
+        # 階層情報をメタデータに追加
         if self.hierarchy:
-            for term in terms:
+            for term in technical_terms:
                 for rep, node in self.hierarchy.items():
                     if term.term in node.terms:
                         term.metadata['cluster_id'] = node.cluster_id
                         term.metadata['cluster_category'] = node.category_name
                         break
 
-        # STEP 10: 最終LLM専門用語判定 (オプション)
-        if self.enable_definition_filtering:
-            logger.info("STEP 10: Final LLM technical term filtering")
-            terms = filter_technical_terms_by_definition(
-                terms,
-                verbose=False
-            )
-
-        return terms
+        return technical_terms
 
     def _extract_candidates(self, text: str) -> Dict[str, int]:
         """
@@ -403,29 +403,110 @@ class EnhancedTermExtractorV4(BaseExtractor):
 
         return filtered
 
-    def _extract_headings(self, text: str) -> Set[str]:
-        """見出しから用語抽出"""
-        heading_terms = set()
-        heading_patterns = [
-            r'^#{1,6}\s+(.+)$',
-            r'^\d+\.\s+(.+)$',
-            r'^第[一二三四五六七八九十\d]+[章節項]\s*(.+)$',
+    def _extract_header_terms(self, text: str) -> Set[str]:
+        """
+        見出しから重要用語を抽出
+        
+        Args:
+            text: 入力テキスト
+            
+        Returns:
+            見出しに含まれる用語のセット
+        """
+        header_patterns = [
+            # 日本語見出しパターン
+            r'^第[０-９\d]+[章節項]\s+(.+)$',     # 第1章 エンジンの構造
+            r'^[０-９\d]+\.\s+(.+)$',            # 1. はじめに
+            r'^[０-９\d]+\.[０-９\d]+\s+(.+)$',   # 1.1 背景
+            r'^\[(.+?)\]',                       # [重要事項]
+            r'^【(.+?)】',                        # 【注意】
+            # 英語見出し
+            r'^Chapter\s+\d+[:：]\s*(.+)$',      # Chapter 1: Introduction
+            r'^Section\s+\d+[:：]\s*(.+)$',      # Section 2: Methods
+            # 強調パターン（大文字や記号）
+            r'^[■□▼▲●○]\s*(.+)$',             # ■ 概要
+            r'^[A-Z\s]{5,}$',                    # IMPORTANT NOTICE
         ]
-
-        for line in text.split('\n'):
+        
+        header_terms = set()
+        lines = text.split('\n')
+        
+        for line in lines:
             line = line.strip()
-            for pattern in heading_patterns:
-                match = re.match(pattern, line)
+            if not line:
+                continue
+                
+            for pattern in header_patterns:
+                match = re.match(pattern, line, re.IGNORECASE)
                 if match:
-                    heading_text = match.group(1)
-                    # カタカナ・漢字抽出
-                    terms = re.findall(r'[ァ-ヶー一-龯]{2,}', heading_text)
-                    for term in terms:
-                        if self.min_term_length <= len(term) <= self.max_term_length:
-                            heading_terms.add(term)
+                    header_text = match.group(1) if match.groups() else line
+                    
+                    # 見出しテキストから用語候補を抽出
+                    # 既存のパターンを使用
+                    patterns = [
+                        r'[ァ-ヶー]+',  # カタカナ
+                        r'[一-龯]{2,}',  # 漢字（2文字以上）
+                        r'[0-9]+[A-Za-z]+[0-9A-Za-z~\-]*',  # 型式番号
+                        r'[A-Za-z]+[0-9]+[A-Za-z0-9~\-]*',  # 逆パターン
+                        r'[A-Za-z]{2,}',  # 英字（2文字以上）
+                    ]
+                    
+                    for p in patterns:
+                        terms = re.findall(p, header_text)
+                        header_terms.update(terms)
                     break
+        
+        logger.info(f"Extracted {len(header_terms)} terms from headers")
+        return header_terms
+    
+    def _apply_header_bonus(
+        self,
+        base_scores: Dict[str, float],
+        header_terms: Set[str]
+    ) -> Dict[str, float]:
+        """
+        見出しに含まれる用語に2倍ボーナスを適用
+        
+        Args:
+            base_scores: 基底スコア辞書
+            header_terms: 見出し用語のセット
+            
+        Returns:
+            ボーナス適用後のスコア辞書
+        """
+        adjusted_scores = base_scores.copy()
+        bonus_applied = 0
+        
+        for term in adjusted_scores:
+            if term in header_terms:
+                adjusted_scores[term] *= 2.0
+                bonus_applied += 1
+        
+        if bonus_applied > 0:
+            logger.info(f"Header bonus applied to {bonus_applied} terms")
+            
+        return adjusted_scores
 
-        return heading_terms
+    def _calculate_definition_count(self, candidate_count: int) -> int:
+        """
+        文書規模に応じた定義生成数を計算
+        
+        Args:
+            candidate_count: 候補用語数
+            
+        Returns:
+            定義生成数
+        """
+        percentage = 0.25  # 上位25%
+        min_count = 15     # 最小15件
+        max_count = 50     # 最大50件
+        
+        target = int(candidate_count * percentage)
+        result = max(min_count, min(target, max_count))
+        
+        logger.info(f"Definition count: {result} (from {candidate_count} candidates)")
+        return result
+
 
     def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
         """
