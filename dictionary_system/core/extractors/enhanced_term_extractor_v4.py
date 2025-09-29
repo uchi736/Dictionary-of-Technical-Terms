@@ -606,6 +606,7 @@ class EnhancedTermExtractorV4(BaseExtractor):
     def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
         """
         SudachiPyによる形態素解析ベースの候補語抽出
+        Mode C（長単位）を使用して既存の複合語を抽出
         連続名詞を連結するのみ（部分列生成はn-gramに任せる）
 
         Returns:
@@ -652,6 +653,7 @@ class EnhancedTermExtractorV4(BaseExtractor):
     def _generate_ngram_candidates(self, text: str) -> Dict[str, int]:
         """
         形態素n-gramによる複合語生成
+        Mode Aを使用して細かい単位で分割し、文境界内でn-gramを生成
 
         Args:
             text: 入力テキスト
@@ -664,21 +666,48 @@ class EnhancedTermExtractorV4(BaseExtractor):
 
         candidates = Counter()
 
-        # 形態素解析
-        tokens = self.sudachi_tokenizer.tokenize(text, self.sudachi_mode)
+        # 句読点で文を分割（文をまたがったn-gramを防ぐ）
+        import re
+        sentences = re.split(r'[。！？、\n]', text)
 
-        # 名詞のみ抽出
-        nouns = [t.surface() for t in tokens if t.part_of_speech()[0] == '名詞']
+        for sentence in sentences:
+            if not sentence.strip():
+                continue
 
-        if len(nouns) < 2:
-            return candidates
+            # Mode Aで形態素解析（細かい単位）
+            tokens = self.sudachi_tokenizer.tokenize(
+                sentence,
+                tokenizer.Tokenizer.SplitMode.A  # Mode C → Mode A
+            )
 
-        # n-gram生成（2-gram から max_ngram まで）
-        for window_size in range(2, min(self.max_ngram + 1, len(nouns) + 1)):
-            for i in range(len(nouns) - window_size + 1):
-                phrase = ''.join(nouns[i:i + window_size])
-                if self.min_term_length <= len(phrase) <= self.max_term_length:
-                    candidates[phrase] += 1
+            # 名詞のみ抽出（連続する名詞のみでn-gram生成）
+            noun_sequences = []
+            current_nouns = []
+
+            for token in tokens:
+                if token.part_of_speech()[0] == '名詞':
+                    current_nouns.append(token.surface())
+                else:
+                    if len(current_nouns) >= 2:  # 2つ以上の名詞が連続
+                        noun_sequences.append(current_nouns)
+                    current_nouns = []
+
+            # 最後のシーケンスも追加
+            if len(current_nouns) >= 2:
+                noun_sequences.append(current_nouns)
+
+            # 各名詞シーケンスからn-gramを生成
+            for nouns in noun_sequences:
+                # n-gram生成（2-gram から max_ngram まで）
+                for window_size in range(2, min(self.max_ngram + 1, len(nouns) + 1)):
+                    for i in range(len(nouns) - window_size + 1):
+                        phrase = ''.join(nouns[i:i + window_size])
+
+                        # フィルタリング
+                        if (self.min_term_length <= len(phrase) <= self.max_term_length
+                            and not self._is_garbage_term(phrase)
+                            and not self._is_common_noun(phrase)):
+                            candidates[phrase] += 1
 
         return candidates
 
