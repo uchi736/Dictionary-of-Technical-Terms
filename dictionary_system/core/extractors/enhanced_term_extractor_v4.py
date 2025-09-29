@@ -265,9 +265,9 @@ class EnhancedTermExtractorV4(BaseExtractor):
             base_scores
         )
 
-        # STEP 6.5: 軽い部分文字列フィルタリング (10%以下の明らかな重複のみ除外)
-        logger.info("STEP 6.5: Light substring filtering (10% threshold)")
-        final_scores = self._filter_substring_duplicates(final_scores, score_ratio_threshold=0.1)
+        # STEP 6.5: 部分文字列フィルタリング (30%以下は除外)
+        logger.info("STEP 6.5: Substring filtering (30% threshold)")
+        final_scores = self._filter_substring_duplicates(final_scores, score_ratio_threshold=0.3)
 
         # Term オブジェクトに変換
         terms = [
@@ -356,8 +356,8 @@ class EnhancedTermExtractorV4(BaseExtractor):
         patterns = [
             r'[ァ-ヶー]+',  # カタカナ
             r'[一-龯]{2,}',  # 漢字（2文字以上）
-            r'[0-9]+[A-Za-z]+[0-9A-Za-z~\-]*',  # 型式番号（6DE~~, 6DE-50など）
-            r'[A-Za-z]+[0-9]+[A-Za-z0-9~\-]*',  # 逆パターン（ABC123など）
+            r'[0-9]+[A-Za-z]+[0-9A-Za-z~～\-]*',  # 型式番号（6DE~~, 6DE-50など）※全角チルダ対応
+            r'[A-Za-z]+[0-9]+[A-Za-z0-9~～\-]*',  # 逆パターン（ABC123など）
             r'[A-Za-z]+',  # 純粋な英字（2文字以上はmin_term_lengthで制御）
             r'[ァ-ヶー]+[一-龯]+|[一-龯]+[ァ-ヶー]+',  # カタカナ+漢字
             r'[一-龯]+[ァ-ヶー]+[一-龯]+',  # 漢字+カタカナ+漢字
@@ -369,6 +369,14 @@ class EnhancedTermExtractorV4(BaseExtractor):
 
                 # 純粋な数字のみは除外
                 if re.match(r'^\d+$', term):
+                    continue
+
+                # ゴミ用語チェック
+                if self._is_garbage_term(term):
+                    continue
+
+                # 単体の一般名詞チェック（複合語の一部でない場合）
+                if self._is_common_noun(term):
                     continue
 
                 # 長さチェック
@@ -392,13 +400,21 @@ class EnhancedTermExtractorV4(BaseExtractor):
                 candidates[term] = 1
             candidates[term] += 2  # ボーナス
 
-        # 5. 頻度フィルタ
+        # 5. 頻度フィルタ（型式番号と見出し用語は保護）
         filtered = {}
         for term, freq in candidates.items():
+            # ゴミ用語の二次チェック
+            if self._is_garbage_term(term):
+                continue
+
+            # 頻度条件を満たすか
             if freq >= self.min_frequency:
                 filtered[term] = freq
+            # 型式番号は頻度1でも残す
+            elif self._is_model_number(term):
+                filtered[term] = freq
+            # 見出しに含まれる用語は頻度1でも残す
             elif freq == 1 and term in heading_terms:
-                # 見出しに含まれる用語は頻度1でも残す
                 filtered[term] = freq
 
         return filtered
@@ -507,6 +523,85 @@ class EnhancedTermExtractorV4(BaseExtractor):
         logger.info(f"Definition count: {result} (from {candidate_count} candidates)")
         return result
 
+    def _is_garbage_term(self, term: str) -> bool:
+        """
+        ゴミ用語（文字化け、ノイズ）を判定
+        
+        Args:
+            term: 判定する用語
+            
+        Returns:
+            ゴミ用語ならTrue
+        """
+        # 1-2文字のカタカナ片（「ス」「ア」など）
+        if len(term) <= 2 and re.match(r'^[ァ-ヶー]+$', term):
+            return True
+            
+        # 明らかに途切れた用語パターン
+        garbage_patterns = [
+            r'^アンモ$',       # 「アンモニア」の途切れ
+            r'^ニア[^ニ]',     # 「ニア燃焼」など
+            r'^GHG[排出]$',    # 「GHG排」など
+            r'^[ァ-ヶー]{1,2}[燃焼料]',  # カタカナ1-2文字+漢字
+            r'^本[エンジン船舶]',  # 「本エンジン」など指示語
+            r'^この',
+            r'^その',
+            r'^当該',
+        ]
+        
+        for pattern in garbage_patterns:
+            if re.match(pattern, term):
+                return True
+                
+        return False
+    
+    def _is_common_noun(self, term: str) -> bool:
+        """
+        除外すべき一般名詞かを判定
+        
+        Args:
+            term: 判定する用語
+            
+        Returns:
+            除外すべき一般名詞ならTrue
+        """
+        # 単体の一般名詞リスト
+        common_nouns = {
+            'エンジン', '燃料', '燃焼', 'ガス', '船', '船舶',
+            '使用', '開発', '供給', '輸送', '運転', '試験',
+            '結果', '効果', '濃度', '出力', '負荷', '周囲',
+            '混合', '全部', '商業', '熱量', '臭', '弁',
+        }
+        
+        # 完全一致で一般名詞
+        if term in common_nouns:
+            return True
+            
+        return False
+    
+    def _is_model_number(self, term: str) -> bool:
+        """
+        型式番号パターンかを判定
+        
+        Args:
+            term: 判定する用語
+            
+        Returns:
+            型式番号パターンならTrue
+        """
+        model_patterns = [
+            r'^[0-9]+[A-Z]+[0-9A-Z~～\-]*$',   # 6DE~, 6L50DF
+            r'^[A-Z]+[0-9]+[A-Z0-9~～\-]*$',   # L28ADF
+            r'^[A-Z]{2,}[\-]?[0-9]{2,}$',      # ME-GI, WinGD-12
+            r'^[0-9]+[A-Z][\-][0-9]+$',        # 6L-50
+        ]
+        
+        for pattern in model_patterns:
+            if re.match(pattern, term, re.IGNORECASE):
+                return True
+                
+        return False
+
 
     def _extract_candidates_with_sudachi(self, text: str) -> Dict[str, int]:
         """
@@ -535,7 +630,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
                 if current_phrase:
                     # 名詞句全体のみを追加（後方suffixは削除）
                     phrase = ''.join(current_phrase)
-                    if self.min_term_length <= len(phrase) <= self.max_term_length:
+                    # ゴミ用語と一般名詞をフィルタ
+                    if (self.min_term_length <= len(phrase) <= self.max_term_length
+                        and not self._is_garbage_term(phrase)
+                        and not self._is_common_noun(phrase)):
                         candidates[phrase] += 1
 
                     current_phrase = []
@@ -543,7 +641,10 @@ class EnhancedTermExtractorV4(BaseExtractor):
         # 最後の句を処理
         if current_phrase:
             phrase = ''.join(current_phrase)
-            if self.min_term_length <= len(phrase) <= self.max_term_length:
+            # ゴミ用語と一般名詞をフィルタ
+            if (self.min_term_length <= len(phrase) <= self.max_term_length
+                and not self._is_garbage_term(phrase)
+                and not self._is_common_noun(phrase)):
                 candidates[phrase] += 1
 
         return candidates
