@@ -52,15 +52,15 @@ with st.sidebar:
 
     st.subheader("🎯 SemRe-Rank設定")
     seed_z = st.slider(
-        "シード選定閾値 (Z-score)",
-        min_value=10,
-        max_value=100,
-        value=50,
-        help="上位何件からシードを選定するか"
+        "シード選定上限",
+        min_value=5,
+        max_value=20,
+        value=10,
+        help="上位何件からシードを選定するか（エルボー法無効、固定数選定）"
     )
 
     min_seed_count = st.slider("最小シード数", 3, 20, 5)
-    max_seed_ratio = st.slider("最大シード比率", 0.3, 0.9, 0.7, 0.1)
+    max_seed_ratio = st.slider("最大シード比率", 0.1, 0.5, 0.2, 0.05)
 
     relmin = st.slider("relmin (最小類似度)", 0.0, 1.0, 0.5, 0.1)
     reltop = st.slider("reltop (上位割合)", 0.05, 0.5, 0.15, 0.05)
@@ -135,7 +135,7 @@ with col2:
                     min_frequency=min_frequency,
                     use_azure_openai=True,
                     seed_z=seed_z,
-                    use_elbow_detection=True,
+                    use_elbow_detection=False,
                     min_seed_count=min_seed_count,
                     max_seed_ratio=max_seed_ratio,
                     relmin=relmin,

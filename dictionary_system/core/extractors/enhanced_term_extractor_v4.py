@@ -86,11 +86,11 @@ class EnhancedTermExtractorV4(BaseExtractor):
         relmin: float = 0.5,
         reltop: float = 0.15,
         alpha: float = 0.85,
-        seed_z: int = 50,
+        seed_z: int = 10,
         auto_select_seeds: bool = True,
-        use_elbow_detection: bool = True,
+        use_elbow_detection: bool = False,
         min_seed_count: int = 5,
-        max_seed_ratio: float = 0.7,
+        max_seed_ratio: float = 0.2,
         # 埋め込み
         use_cache: bool = True,
         cache_dir: str = "cache/embeddings",
@@ -245,16 +245,29 @@ class EnhancedTermExtractorV4(BaseExtractor):
             cval = cvalue_scores.get(term, 0.0)
             base_scores[term] = 0.7 * tfidf + 0.3 * cval
 
-        # STEP 4-6: SemRe-Rankアルゴリズム
+        # STEP 3.5: 複合度ボーナス適用
+        logger.info("STEP 3.5: Applying complexity bonus")
+        base_scores = self._apply_complexity_bonus(base_scores)
+
+        # STEP 3.6: 早期フィルタリング（下位20%除外）
+        logger.info("STEP 3.6: Early filtering (removing bottom 20%)")
+        base_scores = self._early_filtering(base_scores, percentile_threshold=20)
+
+        # STEP 3.7: 粗い部分文字列フィルタ（50%以下除外）
+        logger.info("STEP 3.7: Coarse substring filtering (50% threshold)")
+        base_scores = self._filter_substring_duplicates(base_scores, score_ratio_threshold=0.5)
+
+        # STEP 4-6: SemRe-Rankアルゴリズム（フィルタ後の用語のみ）
         logger.info("STEP 4-6: SemRe-Rank algorithm")
+        filtered_terms = list(base_scores.keys())
         final_scores = self._semrerank_scoring(
-            terms_list,
+            filtered_terms,
             base_scores
         )
 
-        # STEP 6.5: 部分文字列フィルタリング (新規)
-        logger.info("STEP 6.5: Substring filtering")
-        final_scores = self._filter_substring_duplicates(final_scores)
+        # STEP 6.5: 精密な部分文字列フィルタリング (20%以下除外)
+        logger.info("STEP 6.5: Fine substring filtering (20% threshold)")
+        final_scores = self._filter_substring_duplicates(final_scores, score_ratio_threshold=0.2)
 
         # Term オブジェクトに変換
         terms = [
@@ -767,6 +780,61 @@ class EnhancedTermExtractorV4(BaseExtractor):
         logger.info(f"Substring filtering: {len(scored_terms)} → {len(filtered)} terms")
 
         return filtered
+
+    def _apply_complexity_bonus(self, base_scores: Dict[str, float]) -> Dict[str, float]:
+        """
+        複合語に対してボーナススコアを付与
+        
+        Args:
+            base_scores: 基底スコア辞書
+            
+        Returns:
+            複合度ボーナス適用後のスコア辞書
+        """
+        adjusted_scores = {}
+        for term, score in base_scores.items():
+            # カタカナ部、漢字部、英数部などの構成要素数を計算
+            components = len(re.findall(
+                r'[ァ-ヶー]+|[一-龯]+|[A-Za-z0-9]+|[0-9]+',
+                term
+            ))
+            # 複合度に応じてボーナス（単体なら1.0、複合なら1.3, 1.6...）
+            complexity_multiplier = 1 + 0.3 * max(0, components - 1)
+            adjusted_scores[term] = score * complexity_multiplier
+            
+        return adjusted_scores
+
+    def _early_filtering(
+        self,
+        base_scores: Dict[str, float],
+        percentile_threshold: int = 20
+    ) -> Dict[str, float]:
+        """
+        早期フィルタリング（SemRe-Rank前に明らかな低スコアを除外）
+        
+        Args:
+            base_scores: 基底スコア辞書
+            percentile_threshold: 下位何%を除外するか（デフォルト20%）
+            
+        Returns:
+            フィルタリング後のスコア辞書
+        """
+        if not base_scores:
+            return base_scores
+            
+        import numpy as np
+        score_values = list(base_scores.values())
+        threshold = np.percentile(score_values, percentile_threshold)
+        
+        # 閾値以上のスコアを持つ用語のみ残す
+        filtered_scores = {
+            term: score
+            for term, score in base_scores.items()
+            if score >= threshold
+        }
+        
+        logger.info(f"Early filtering: {len(base_scores)} → {len(filtered_scores)} terms")
+        return filtered_scores
 
     def _filter_terms_within_clusters(
         self,
