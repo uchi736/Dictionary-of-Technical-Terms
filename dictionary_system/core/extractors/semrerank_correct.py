@@ -108,16 +108,18 @@ class SemReRank:
     def enhance_ate_scores(
         self,
         text: str,
-        candidate_terms: Dict[str, float],  # {term: base_ate_score}
-        term_frequencies: Optional[Dict[str, int]] = None
+        candidate_terms: Dict[str, float],  # {term: base_ate_score}（Stage B用）
+        term_frequencies: Optional[Dict[str, int]] = None,
+        seed_selection_scores: Optional[Dict[str, float]] = None  # Stage A用スコア
     ) -> Dict[str, float]:
         """
         SemRe-Rankによるスコア改善のメインメソッド
 
         Args:
             text: 対象文書のテキスト
-            candidate_terms: 候補用語とその基底ATEスコア
+            candidate_terms: 候補用語とその基底ATEスコア（Stage B: 最終ランク付け用）
             term_frequencies: 用語の頻度（シード選択用）
+            seed_selection_scores: シード選択用スコア（Stage A: C-value重視）
 
         Returns:
             改善されたスコア辞書 {term: enhanced_score}
@@ -125,8 +127,11 @@ class SemReRank:
         if not candidate_terms:
             return {}
 
-        # 1. シード用語を選定
-        seed_terms = self._select_seed_terms(candidate_terms, term_frequencies)
+        # シード選択にはStage Aのスコアを使用（指定された場合）
+        scores_for_seed_selection = seed_selection_scores if seed_selection_scores else candidate_terms
+
+        # 1. シード用語を選定（Stage Aスコア使用）
+        seed_terms = self._select_seed_terms(scores_for_seed_selection, term_frequencies)
         logger.info(f"Selected {len(seed_terms)} seed terms")
 
         # 2. 候補用語から単語を抽出
@@ -162,7 +167,7 @@ class SemReRank:
             for word, score in pagerank_scores.items():
                 word_importance[word] += score
 
-        # 7. 候補用語のスコアを改訂
+        # 7. 候補用語のスコアを改訂（Stage Bスコア使用）
         enhanced_scores = self._revise_scores(
             candidate_terms,
             word_importance,
@@ -541,17 +546,21 @@ class SemReRankExtractor(BaseExtractor):
         if not candidates:
             return []
 
-        # 2. 基底ATEスコアを計算
-        base_scores = self._calculate_base_scores(text, candidates)
+        # 2. Stage A: シード選定用スコア（C-value重視: 0.3 TF-IDF + 0.7 C-value）
+        seed_scores = self._calculate_base_scores(text, candidates, stage="seed")
+        
+        # 3. Stage B: 最終ランク付け用スコア（TF-IDF重視: 0.7 TF-IDF + 0.3 C-value）
+        base_scores = self._calculate_base_scores(text, candidates, stage="final")
 
-        # 3. SemRe-Rankでスコアを改善
+        # 4. SemRe-Rankでスコアを改善（seed_scoresをシード選定に使用）
         enhanced_scores = self.semrerank.enhance_ate_scores(
             text,
             base_scores,
-            candidates
+            candidates,
+            seed_selection_scores=seed_scores  # シード選定用の別スコアを渡す
         )
 
-        # 4. Termオブジェクトに変換
+        # 5. Termオブジェクトに変換
         terms = []
         for term, score in enhanced_scores.items():
             terms.append(Term(
@@ -560,15 +569,16 @@ class SemReRankExtractor(BaseExtractor):
                 definition="",
                 metadata={
                     "frequency": candidates.get(term, 0),
+                    "seed_score": seed_scores.get(term, 0.0),
                     "base_score": base_scores.get(term, 0.0),
                     "enhanced_score": score,
                     "method": "SemRe-Rank"
                 }
             ))
 
-        # 5. スコアでソートして返す
+        # 6. スコアでソートして返す
         terms.sort(key=lambda x: x.score, reverse=True)
-        return terms[:100]  # 上位100件を返す
+        return terms[:100]  # 上位100件を返す  # 上位100件を返す
 
     def _extract_candidates(self, text: str) -> Dict[str, int]:
         """候補用語を抽出し頻度をカウント"""
@@ -600,18 +610,74 @@ class SemReRankExtractor(BaseExtractor):
     def _calculate_base_scores(
         self,
         text: str,
-        candidates: Dict[str, int]
+        candidates: Dict[str, int],
+        stage: str = "final"  # "seed" or "final"
     ) -> Dict[str, float]:
-        """基底ATEスコアを計算（TF-IDFまたはC-value）"""
+        """基底ATEスコアを計算（TF-IDFとC-valueの重み付き組み合わせ）
 
-        if self.base_ate_method == "tfidf":
-            return self._calculate_tfidf(text, candidates)
-        elif self.base_ate_method == "cvalue":
-            return self._calculate_cvalue(candidates)
+        Args:
+            text: 対象テキスト
+            candidates: 候補用語と頻度
+            stage: "seed" (Stage A: 0.3 TF-IDF + 0.7 C-value) or
+                   "final" (Stage B: 0.7 TF-IDF + 0.3 C-value)
+        """
+        # TF-IDFとC-valueを両方計算
+        tfidf_scores = self._calculate_tfidf(text, candidates)
+        cvalue_scores = self._calculate_cvalue(candidates)
+
+        # 通常のmin-max正規化
+        tfidf_normalized = self._min_max_normalize(tfidf_scores)
+        cvalue_normalized = self._min_max_normalize(cvalue_scores)
+
+        # 段階別の重み設定
+        if stage == "seed":
+            # Stage A: シード選定 - C-value重視
+            tfidf_weight = 0.3
+            cvalue_weight = 0.7
         else:
-            # 頻度ベースのフォールバック
-            max_freq = max(candidates.values()) if candidates else 1
-            return {term: freq/max_freq for term, freq in candidates.items()}
+            # Stage B: 最終ランク付け - TF-IDF重視
+            tfidf_weight = 0.7
+            cvalue_weight = 0.3
+
+        # 重み付き結合
+        combined_scores = {}
+        for term in candidates:
+            tfidf = tfidf_normalized.get(term, 0.0)
+            cvalue = cvalue_normalized.get(term, 0.0)
+            combined_scores[term] = tfidf_weight * tfidf + cvalue_weight * cvalue
+
+        # 再正規化は行わない（0スコアを避けるため）
+        return combined_scores
+
+    def _min_max_normalize(self, scores: Dict[str, float]) -> Dict[str, float]:
+        """通常のmin-max正規化
+
+        Args:
+            scores: 正規化前のスコア辞書
+
+        Returns:
+            正規化後のスコア辞書（0-1の範囲）
+        """
+        if not scores:
+            return {}
+
+        values = list(scores.values())
+        if len(values) == 1:
+            return {k: 1.0 for k in scores}
+
+        min_val = min(values)
+        max_val = max(values)
+
+        # 範囲が0の場合の処理
+        if max_val - min_val < 1e-10:
+            return {k: 0.5 for k in scores}
+
+        # 正規化
+        normalized = {}
+        for term, score in scores.items():
+            normalized[term] = (score - min_val) / (max_val - min_val)
+
+        return normalized
 
     def _calculate_tfidf(
         self,
