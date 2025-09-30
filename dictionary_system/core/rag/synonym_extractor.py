@@ -448,11 +448,10 @@ class HierarchicalSynonymExtractor:
         clusterer,
         verbose: bool = True
     ) -> Dict[str, SynonymHierarchy]:
-        """階層構造を構築（condensed_treeから親子関係を抽出）"""
+        """階層構造を構築（用語名の包含関係から上位下位を推定）"""
         from collections import defaultdict
-
-        # condensed_treeから階層情報を取得
-        condensed_tree = clusterer.condensed_tree_
+        import logging
+        logger = logging.getLogger(__name__)
 
         # 葉ノードのクラスタリング結果
         cluster_terms = defaultdict(list)
@@ -462,7 +461,7 @@ class HierarchicalSynonymExtractor:
 
         # 葉レベルのクラスタを作成
         hierarchies = {}
-        cluster_id_to_node = {}  # cluster_id -> SynonymHierarchy のマッピング
+        cluster_id_to_node = {}
 
         for cluster_id, cluster_terms_list in cluster_terms.items():
             representative = self._select_representative(cluster_terms_list)
@@ -477,25 +476,85 @@ class HierarchicalSynonymExtractor:
             hierarchies[representative] = hierarchy
             cluster_id_to_node[cluster_id] = hierarchy
 
-        # condensed_treeから親子関係を構築
-        import logging
-        logger = logging.getLogger(__name__)
-
-        if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
-            logger.info(f"condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
-            self._extract_parent_child_relationships(
-                condensed_tree,
-                cluster_id_to_node,
-                hierarchies,
-                verbose=verbose
-            )
-        else:
-            if not hasattr(clusterer, 'condensed_tree_'):
-                logger.warning(f"condensed_tree_が存在しません")
-            elif len(cluster_id_to_node) <= 1:
-                logger.info(f"階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
+        # 用語名の包含関係から階層を構築
+        logger.info(f"用語包含関係解析開始: {len(hierarchies)}個のクラスタ")
+        self._extract_subsumption_hierarchy(hierarchies, verbose=verbose)
 
         return hierarchies
+
+    def _extract_subsumption_hierarchy(
+        self,
+        hierarchies: Dict[str, SynonymHierarchy],
+        verbose: bool = True
+    ):
+        """
+        用語名の包含関係から階層を構築
+        
+        例: 「エンジン」⊂「アンモニア燃料エンジン」⊂「6DE-28エンジン」
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 全用語をフラット化
+        all_terms = []
+        term_to_cluster = {}
+        
+        for rep, node in list(hierarchies.items()):
+            for term in node.terms:
+                all_terms.append(term)
+                term_to_cluster[term] = node
+        
+        # 用語間の包含関係を検出
+        parent_child_map = {}  # child_term -> parent_term
+        
+        for i, child_term in enumerate(all_terms):
+            for j, parent_term in enumerate(all_terms):
+                if i != j and parent_term != child_term:
+                    # child_termがparent_termを含む場合、parent_termが上位概念
+                    if parent_term in child_term and len(parent_term) < len(child_term):
+                        # より短い親が既に存在する場合はスキップ（最も近い親のみ）
+                        if child_term not in parent_child_map or len(parent_term) > len(parent_child_map[child_term]):
+                            parent_child_map[child_term] = parent_term
+        
+        if not parent_child_map:
+            logger.info("用語包含関係: 階層関係なし（全て独立クラスタ）")
+            return
+        
+        logger.info(f"用語包含関係: {len(parent_child_map)}個の親子関係を検出")
+        
+        # クラスタレベルの親子関係を構築
+        cluster_parent_child = {}  # child_cluster -> parent_cluster
+        
+        for child_term, parent_term in parent_child_map.items():
+            child_cluster = term_to_cluster[child_term]
+            parent_cluster = term_to_cluster[parent_term]
+            
+            if child_cluster != parent_cluster:
+                # 異なるクラスタ間の関係のみ
+                if child_cluster.representative not in cluster_parent_child:
+                    cluster_parent_child[child_cluster.representative] = parent_cluster.representative
+        
+        if not cluster_parent_child:
+            logger.info("クラスタ間階層: 関係なし（クラスタ内包含のみ）")
+            return
+        
+        logger.info(f"クラスタ間階層: {len(cluster_parent_child)}個のクラスタ親子関係")
+        
+        # 階層構造を再構築
+        for child_rep, parent_rep in cluster_parent_child.items():
+            if child_rep in hierarchies and parent_rep in hierarchies:
+                parent_node = hierarchies[parent_rep]
+                child_node = hierarchies[child_rep]
+                
+                # 親ノードに子を追加
+                parent_node.children[child_rep] = child_node
+                child_node.level = parent_node.level + 1
+                
+                # 子ノードをトップレベルから削除
+                if child_rep in hierarchies:
+                    del hierarchies[child_rep]
+                
+                logger.info(f"  {parent_rep} -> {child_rep}")
 
     def _extract_parent_child_relationships(
         self,
