@@ -361,12 +361,14 @@ class SemReRank:
             embeddings=vectors
         )
 
-        # 2. 各単語の類似語を検索
+        # 2. 各単語の類似語を検索（事前計算済みベクトルを使用）
         relatedness = {}
         k = max(1, int(len(words) * self.reltop))  # 上位reltop%を選択
 
         for word in words:
-            results = store.similarity_search_with_score(word, k=k)
+            # 既に計算済みのembeddingを使用（API呼び出しなし）
+            query_vector = embeddings[word].tolist()
+            results = store.similarity_search_with_score_by_vector(query_vector, k=k)
             for doc, score in results:
                 similar_word = doc.page_content
                 if score >= self.relmin and similar_word != word:
