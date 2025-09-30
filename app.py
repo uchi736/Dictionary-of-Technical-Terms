@@ -283,40 +283,69 @@ if st.session_state.extraction_results:
                 # ツリー形式表示
                 st.markdown("### 📁 階層ツリー")
 
-                # 用語→クラスタのマッピングを作成
-                term_to_cluster = {}
-                for rep, node in hierarchy.items():
-                    for term in node.terms:
-                        term_to_cluster[term] = (node.category_name or rep, node)
-
                 # カテゴリ別にソート
                 sorted_hierarchy = sorted(
                     hierarchy.items(),
                     key=lambda x: x[1].category_name or x[0]
                 )
 
+                def render_hierarchy_node(node: any, rep: str, indent_level: int = 0):
+                    """階層ノードを再帰的に表示"""
+                    category = node.category_name or rep
+                    total_terms = len(node.terms) + sum(len(child.terms) for child in node.children.values())
+
+                    # 親ノードの場合
+                    if node.children:
+                        with st.expander(f"📂 **{category}** ({total_terms}件)", expanded=False):
+                            if node.category_reason:
+                                st.caption(f"💡 {node.category_reason}")
+
+                            # 子クラスタを表示
+                            for child_rep, child_node in node.children.items():
+                                child_category = child_node.category_name or child_rep
+                                st.markdown(f"### 📁 {child_category} ({len(child_node.terms)}件)")
+
+                                if child_node.category_reason:
+                                    st.caption(f"💡 {child_node.category_reason}")
+
+                                # 子クラスタの用語を表示
+                                for term in sorted(child_node.terms):
+                                    term_obj = next((t for t in st.session_state.extraction_results if t.term == term), None)
+
+                                    if term_obj:
+                                        score_str = f"(スコア: {term_obj.score:.3f})" if hasattr(term_obj, 'score') else ""
+                                        st.markdown(f"　└─ **{term}** {score_str}")
+
+                                        if term_obj.definition:
+                                            with st.container():
+                                                st.caption(f"　　📝 {term_obj.definition[:150]}..." if len(term_obj.definition) > 150 else f"　　📝 {term_obj.definition}")
+                                    else:
+                                        st.markdown(f"　└─ {term}")
+
+                    # 葉ノード（子を持たない）の場合
+                    else:
+                        with st.expander(f"📂 **{category}** ({len(node.terms)}件)", expanded=False):
+                            if node.category_reason:
+                                st.caption(f"💡 {node.category_reason}")
+
+                            # 用語リスト（ツリー形式）
+                            for term in sorted(node.terms):
+                                # 用語の詳細情報を取得
+                                term_obj = next((t for t in st.session_state.extraction_results if t.term == term), None)
+
+                                if term_obj:
+                                    score_str = f"(スコア: {term_obj.score:.3f})" if hasattr(term_obj, 'score') else ""
+                                    st.markdown(f"└─ **{term}** {score_str}")
+
+                                    if term_obj.definition:
+                                        with st.container():
+                                            st.caption(f"　📝 {term_obj.definition[:150]}..." if len(term_obj.definition) > 150 else f"　📝 {term_obj.definition}")
+                                else:
+                                    st.markdown(f"└─ {term}")
+
+                # 各階層ノードを表示
                 for i, (rep, node) in enumerate(sorted_hierarchy, 1):
-                    category = node.category_name or f"クラスタ {i}"
-
-                    # カテゴリレベル
-                    with st.expander(f"📂 **{category}** ({len(node.terms)}件)", expanded=False):
-                        if node.category_reason:
-                            st.caption(f"💡 {node.category_reason}")
-
-                        # 用語リスト（ツリー形式）
-                        for term in sorted(node.terms):
-                            # 用語の詳細情報を取得
-                            term_obj = next((t for t in st.session_state.extraction_results if t.term == term), None)
-
-                            if term_obj:
-                                score_str = f"(スコア: {term_obj.score:.3f})" if hasattr(term_obj, 'score') else ""
-                                st.markdown(f"└─ **{term}** {score_str}")
-
-                                if term_obj.definition:
-                                    with st.container():
-                                        st.caption(f"📝 {term_obj.definition[:150]}..." if len(term_obj.definition) > 150 else f"📝 {term_obj.definition}")
-                            else:
-                                st.markdown(f"└─ {term}")
+                    render_hierarchy_node(node, rep, 0)
 
             else:
                 # 既存のリストビュー

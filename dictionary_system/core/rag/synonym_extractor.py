@@ -447,15 +447,21 @@ class HierarchicalSynonymExtractor:
         clusterer,
         verbose: bool = True
     ) -> Dict[str, SynonymHierarchy]:
-        """階層構造を構築"""
+        """階層構造を構築（condensed_treeから親子関係を抽出）"""
         from collections import defaultdict
 
+        # condensed_treeから階層情報を取得
+        condensed_tree = clusterer.condensed_tree_
+
+        # 葉ノードのクラスタリング結果
         cluster_terms = defaultdict(list)
         for i, label in enumerate(clusterer.labels_):
             if label != -1:
                 cluster_terms[label].append(terms[i])
 
+        # 葉レベルのクラスタを作成
         hierarchies = {}
+        cluster_id_to_node = {}  # cluster_id -> SynonymHierarchy のマッピング
 
         for cluster_id, cluster_terms_list in cluster_terms.items():
             representative = self._select_representative(cluster_terms_list)
@@ -468,11 +474,127 @@ class HierarchicalSynonymExtractor:
             )
 
             hierarchies[representative] = hierarchy
+            cluster_id_to_node[cluster_id] = hierarchy
 
-        if verbose:
-            print(f"  階層ノード数: {len(hierarchies)}")
+        # condensed_treeから親子関係を構築
+        if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
+            self._extract_parent_child_relationships(
+                condensed_tree,
+                cluster_id_to_node,
+                hierarchies,
+                verbose=verbose
+            )
 
         return hierarchies
+
+    def _extract_parent_child_relationships(
+        self,
+        condensed_tree,
+        cluster_id_to_node: Dict[int, SynonymHierarchy],
+        hierarchies: Dict[str, SynonymHierarchy],
+        verbose: bool = True
+    ):
+        """
+        condensed_treeから親子関係を抽出
+
+        HDBSCANのcondensed_treeは階層的なクラスタマージ情報を持つ：
+        - parent: 親クラスタID (内部ノードID、通常は n_samples 以上)
+        - child: 子クラスタID (葉は n_samples未満、内部ノードは以上)
+        - lambda_val: 分離の強さ
+        """
+        try:
+            # condensed_tree._raw_treeからマージ情報を取得
+            tree_data = condensed_tree._raw_tree
+
+            # クラスタIDセット（葉レベル）
+            cluster_ids = set(cluster_id_to_node.keys())
+
+            # 内部ノードIDの範囲を推定（通常はn_samples以上）
+            # condensed_treeでは、クラスタIDは小さい値（0,1,2...）
+            # 内部ノードIDは大きい値（n_samples以上）
+            n_samples = max(max(row['parent'], row['child']) for row in tree_data) + 1
+
+            if verbose:
+                print(f"    condensed_tree: {len(tree_data)}行, クラスタID={cluster_ids}")
+
+            # 親子関係のマッピング（内部ノードIDで）
+            parent_to_children = defaultdict(list)
+            child_to_parent = {}
+            internal_node_to_clusters = defaultdict(set)
+
+            # まず、内部ノード→クラスタの対応を構築
+            for row in tree_data:
+                parent = int(row['parent'])
+                child = int(row['child'])
+
+                # 子がクラスタIDの場合
+                if child in cluster_ids:
+                    internal_node_to_clusters[parent].add(child)
+                    child_to_parent[child] = parent
+
+                # 親→子の関係を記録（内部ノード間も含む）
+                parent_to_children[parent].append(child)
+
+            # 再帰的に内部ノードの所属クラスタを伝播
+            def get_all_clusters(node_id):
+                """内部ノードが含む全クラスタIDを取得（再帰）"""
+                if node_id in cluster_ids:
+                    return {node_id}
+
+                clusters = set()
+                if node_id in internal_node_to_clusters:
+                    clusters.update(internal_node_to_clusters[node_id])
+
+                for child in parent_to_children.get(node_id, []):
+                    clusters.update(get_all_clusters(child))
+
+                return clusters
+
+            # 親クラスタを作成（複数のクラスタを含む内部ノード）
+            created_parents = set()
+
+            for parent_node_id, child_node_ids in parent_to_children.items():
+                # この内部ノードが含むクラスタを取得
+                contained_clusters = get_all_clusters(parent_node_id)
+
+                # 複数のクラスタを含む場合のみ親として扱う
+                if len(contained_clusters) > 1:
+                    # 実際のクラスタノードを取得
+                    child_nodes = [cluster_id_to_node[c] for c in contained_clusters if c in cluster_id_to_node]
+
+                    if len(child_nodes) > 1:
+                        # 親ノードの代表語は子の中で最初の用語
+                        parent_representative = child_nodes[0].representative
+
+                        # 親クラスタノードを作成
+                        parent_node = SynonymHierarchy(
+                            representative=f"親:{parent_representative}",
+                            terms=[],  # 親ノードは直接用語を持たない
+                            cluster_id=parent_node_id,
+                            level=1,  # 親レベル
+                            category_name=f"上位概念グループ"
+                        )
+
+                        # 子ノードを親に追加
+                        for child_node in child_nodes:
+                            parent_node.children[child_node.representative] = child_node
+                            child_node.level = 0  # 子レベル
+
+                            # 子を hierarchies から削除（親の下に移動）
+                            if child_node.representative in hierarchies:
+                                del hierarchies[child_node.representative]
+
+                        # 親をhierarchiesに追加
+                        hierarchies[parent_node.representative] = parent_node
+                        created_parents.add(parent_node_id)
+
+            if verbose and created_parents:
+                print(f"  階層構造: {len(created_parents)}個の親クラスタを生成")
+
+        except Exception as e:
+            if verbose:
+                print(f"  警告: condensed_treeからの階層抽出失敗: {e}")
+            # エラー時はフラット構造のまま
 
     def _select_representative(self, terms: List[Term]) -> str:
         """クラスタの代表語を選定（最短の用語）"""
