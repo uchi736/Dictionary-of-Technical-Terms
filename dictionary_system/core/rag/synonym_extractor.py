@@ -448,7 +448,7 @@ class HierarchicalSynonymExtractor:
         clusterer,
         verbose: bool = True
     ) -> Dict[str, SynonymHierarchy]:
-        """階層構造を構築（HDBSCANのcondensed_treeから真の階層を抽出）"""
+        """階層構造を構築（HDBSCANのcondensed_tree + 用語名の包含関係）"""
         from collections import defaultdict
         import logging
         logger = logging.getLogger(__name__)
@@ -479,9 +479,9 @@ class HierarchicalSynonymExtractor:
             hierarchies[representative] = hierarchy
             cluster_id_to_node[cluster_id] = hierarchy
 
-        # condensed_treeから真の階層を構築
+        # STEP 1: condensed_treeからHDBSCANの階層を構築
         if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
-            logger.info(f"condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
+            logger.info(f"STEP 1: HDBSCAN階層抽出開始 ({len(cluster_id_to_node)}個のクラスタ)")
             self._extract_hdbscan_hierarchy(
                 clusterer.condensed_tree_,
                 cluster_id_to_node,
@@ -494,6 +494,10 @@ class HierarchicalSynonymExtractor:
                 logger.warning(f"condensed_tree_が存在しません")
             elif len(cluster_id_to_node) <= 1:
                 logger.info(f"階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
+        
+        # STEP 2: 用語名の包含関係で階層を補強
+        logger.info(f"STEP 2: 用語包含関係で階層補強")
+        self._enrich_with_subsumption(hierarchies, verbose=verbose)
 
         return hierarchies
 
@@ -596,6 +600,106 @@ class HierarchicalSynonymExtractor:
                 
         except Exception as e:
             logger.error(f"condensed_treeからの階層抽出失敗: {e}", exc_info=True)
+
+    def _enrich_with_subsumption(
+        self,
+        hierarchies: Dict[str, SynonymHierarchy],
+        verbose: bool = True
+    ):
+        """
+        用語名の包含関係で階層を補強
+        
+        既存の階層に対して、用語名の包含関係を追加で検出し、
+        意味のある親子関係があれば階層に反映する。
+        
+        例: 「エンジン」クラスタと「アンモニア燃料エンジン」クラスタがあれば、
+            包含関係を検出して親子にする
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 全ノード（親・子含む）をフラット化
+        all_nodes = {}
+        
+        def collect_nodes(nodes_dict):
+            """再帰的に全ノードを収集"""
+            for rep, node in nodes_dict.items():
+                all_nodes[rep] = node
+                if node.children:
+                    collect_nodes(node.children)
+        
+        collect_nodes(hierarchies)
+        
+        # 各ノードの全用語をリストアップ
+        node_terms = {}
+        for rep, node in all_nodes.items():
+            node_terms[rep] = set(node.terms)
+            # 子ノードの用語も含める
+            for child_node in node.children.values():
+                node_terms[rep].update(child_node.terms)
+        
+        # ノード間の包含関係を検出
+        subsumption_pairs = []  # (parent_rep, child_rep, score)
+        
+        for i, (rep1, terms1) in enumerate(node_terms.items()):
+            for j, (rep2, terms2) in enumerate(node_terms.items()):
+                if i >= j:
+                    continue
+                
+                # どちらかの用語が他方を包含しているか
+                for term1 in terms1:
+                    for term2 in terms2:
+                        if term1 != term2:
+                            # term2がterm1を包含 → term1が親
+                            if term1 in term2 and len(term1) < len(term2):
+                                subsumption_pairs.append((rep1, rep2, len(term2) - len(term1)))
+                            # term1がterm2を包含 → term2が親
+                            elif term2 in term1 and len(term2) < len(term1):
+                                subsumption_pairs.append((rep2, rep1, len(term1) - len(term2)))
+        
+        if not subsumption_pairs:
+            logger.info("  用語包含関係: 検出なし")
+            return
+        
+        # スコアでソート（包含の差が大きいものを優先）
+        subsumption_pairs.sort(key=lambda x: x[2], reverse=True)
+        
+        # 包含関係を階層に反映
+        added_count = 0
+        
+        for parent_rep, child_rep, score in subsumption_pairs:
+            parent_node = all_nodes.get(parent_rep)
+            child_node = all_nodes.get(child_rep)
+            
+            if not parent_node or not child_node:
+                continue
+            
+            # 既に親子関係がある場合はスキップ
+            if child_rep in parent_node.children:
+                continue
+            
+            # 逆の関係（子が親を含む）がある場合はスキップ
+            if parent_rep in child_node.children:
+                continue
+            
+            # 同じレベルにある場合のみ親子関係を追加
+            # （既存の階層を壊さないため）
+            if parent_node.level == child_node.level:
+                # 親ノードに子を追加
+                parent_node.children[child_rep] = child_node
+                child_node.level = parent_node.level + 1
+                
+                # 子ノードをトップレベルから削除（親の下に移動）
+                if child_rep in hierarchies:
+                    del hierarchies[child_rep]
+                
+                added_count += 1
+                logger.info(f"  包含関係追加: {parent_rep} -> {child_rep}")
+        
+        if added_count > 0:
+            logger.info(f"  用語包含関係: {added_count}個の親子関係を追加")
+        else:
+            logger.info(f"  用語包含関係: 追加可能な関係なし")
 
     def _extract_subsumption_hierarchy(
         self,
