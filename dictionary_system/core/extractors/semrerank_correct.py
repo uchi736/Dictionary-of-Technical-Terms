@@ -332,25 +332,33 @@ class SemReRank:
         from langchain_postgres import PGVector
         from langchain_core.documents import Document
 
-        # 1. 一時コレクション作成
-        docs = [Document(page_content=word) for word in words]
-
+        # 1. PGVectorインスタンスを作成
         # DB接続URLを構築
         db_url = (f"postgresql+psycopg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
                   f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
 
-        # embedding関数の準備
+        # 事前計算済みの埋め込みを直接格納
+        texts = list(words)
+        vectors = [embeddings[word].tolist() for word in texts]
+
+        # embedding引数にはAzureまたはSentenceTransformerを渡す（使用はされない）
         if self.use_azure_embeddings:
             embedding_func = self.azure_embeddings
         else:
-            # SentenceTransformerをLangChain互換の関数にラップ
-            embedding_func = lambda texts: self.embedder.encode(texts).tolist()
+            embedding_func = SentenceTransformer(self.embedder.model_name)
 
-        store = PGVector.from_documents(
-            documents=docs,
-            embedding=embedding_func,
+        # 空のストアを作成してから埋め込みを追加
+        store = PGVector(
+            embeddings=embedding_func,  # インスタンスとして渡す
             collection_name=f"temp_semrerank_{uuid.uuid4().hex[:8]}",
-            connection=db_url
+            connection=db_url,
+            use_jsonb=True
+        )
+
+        # 事前計算済みの埋め込みを直接追加（API呼び出しなし）
+        store.add_embeddings(
+            texts=texts,
+            embeddings=vectors
         )
 
         # 2. 各単語の類似語を検索
