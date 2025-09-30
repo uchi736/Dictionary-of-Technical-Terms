@@ -478,12 +478,19 @@ class HierarchicalSynonymExtractor:
 
         # condensed_treeから親子関係を構築
         if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
+            if verbose:
+                print(f"  condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
             self._extract_parent_child_relationships(
                 condensed_tree,
                 cluster_id_to_node,
                 hierarchies,
                 verbose=verbose
             )
+        elif verbose:
+            if not hasattr(clusterer, 'condensed_tree_'):
+                print(f"  警告: condensed_tree_が存在しません")
+            elif len(cluster_id_to_node) <= 1:
+                print(f"  階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
 
         return hierarchies
 
@@ -588,8 +595,11 @@ class HierarchicalSynonymExtractor:
                         hierarchies[parent_node.representative] = parent_node
                         created_parents.add(parent_node_id)
 
-            if verbose and created_parents:
-                print(f"  階層構造: {len(created_parents)}個の親クラスタを生成")
+            if verbose:
+                if created_parents:
+                    print(f"  階層構造: {len(created_parents)}個の親クラスタを生成")
+                else:
+                    print(f"  階層構造: 親クラスタなし（全て葉ノード）")
 
         except Exception as e:
             if verbose:
