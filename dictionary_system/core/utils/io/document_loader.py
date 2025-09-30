@@ -101,9 +101,49 @@ class DocumentLoader:
 
     @staticmethod
     def _load_pdf(file_path: Path) -> str:
-        """PDFファイル読み込み"""
+        """PDFファイル読み込み（Azure Document Intelligence優先）"""
+        # Azure Document Intelligence を試行
+        azure_di_key = os.getenv("AZURE_DI_API_KEY")
+        azure_di_endpoint = os.getenv("AZURE_DI_ENDPOINT")
+
+        if azure_di_key and azure_di_endpoint:
+            try:
+                from azure.ai.formrecognizer import DocumentAnalysisClient
+                from azure.core.credentials import AzureKeyCredential
+
+                logger.info(f"Using Azure Document Intelligence for {file_path}")
+
+                client = DocumentAnalysisClient(
+                    endpoint=azure_di_endpoint,
+                    credential=AzureKeyCredential(azure_di_key)
+                )
+
+                with open(file_path, "rb") as f:
+                    poller = client.begin_analyze_document(
+                        "prebuilt-read", document=f
+                    )
+                    result = poller.result()
+
+                # テキストをページごとに抽出
+                text_parts = []
+                for page in result.pages:
+                    page_text = []
+                    for line in page.lines:
+                        page_text.append(line.content)
+                    text_parts.append('\n'.join(page_text))
+
+                logger.info(f"Successfully extracted {len(text_parts)} pages with Azure DI")
+                return '\n'.join(text_parts)
+
+            except ImportError:
+                logger.warning("azure-ai-formrecognizer not installed. Falling back to PyMuPDF...")
+            except Exception as e:
+                logger.warning(f"Azure DI failed: {e}. Falling back to PyMuPDF...")
+
+        # フォールバック: PyMuPDF
         try:
             import fitz  # PyMuPDF
+            logger.info(f"Using PyMuPDF for {file_path}")
             doc = fitz.open(str(file_path))
             text_parts = []
 
@@ -131,8 +171,8 @@ class DocumentLoader:
 
             except ImportError:
                 raise ImportError(
-                    "PDF reading requires PyMuPDF or pdfplumber. "
-                    "Install with: pip install pymupdf or pip install pdfplumber"
+                    "PDF reading requires azure-ai-formrecognizer, PyMuPDF or pdfplumber. "
+                    "Install with: pip install azure-ai-formrecognizer or pip install pymupdf or pip install pdfplumber"
                 )
 
     @staticmethod

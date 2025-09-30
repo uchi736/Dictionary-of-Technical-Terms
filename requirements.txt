@@ -6,6 +6,7 @@ networkx>=2.6.0
 
 # PDF processing
 PyMuPDF>=1.18.0
+azure-ai-formrecognizer>=3.3.0
 
 # NLP and embeddings
 sentence-transformers>=2.2.0
