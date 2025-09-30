@@ -35,7 +35,7 @@ class DefinitionEnricher:
     def __init__(
         self,
         config: Optional[Config] = None,
-        use_pgvector: bool = True,
+        use_pgvector: bool = False,
         use_bm25: bool = True,
         batch_size: int = 5
     ):

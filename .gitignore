@@ -56,3 +56,6 @@ output/
 # Test files
 test_*.py
 *_test.py
+# Generated artifacts
+*.tmp.*
+debug_output.txt
