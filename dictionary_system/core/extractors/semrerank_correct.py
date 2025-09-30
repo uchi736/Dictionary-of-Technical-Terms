@@ -24,6 +24,7 @@ import logging
 import re
 import math
 import os
+import uuid
 from dotenv import load_dotenv
 
 # 環境変数読み込み
@@ -323,30 +324,52 @@ class SemReRank:
         embeddings: Dict[str, np.ndarray]
     ) -> Dict[Tuple[str, str], float]:
         """
-        ペアワイズ意味的関連性を計算（論文3.1節）
+        pgvectorで類似度検索（O(n log n)高速化）
 
         Returns:
             {(word1, word2): relatedness_score}
         """
+        from langchain_postgres import PGVector
+        from langchain_core.documents import Document
+
+        # 1. 一時コレクション作成
+        docs = [Document(page_content=word) for word in words]
+
+        # DB接続URLを構築
+        db_url = (f"postgresql+psycopg://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}"
+                  f"@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}")
+
+        # embedding関数の準備
+        if self.use_azure_embeddings:
+            embedding_func = self.azure_embeddings
+        else:
+            # SentenceTransformerをLangChain互換の関数にラップ
+            embedding_func = lambda texts: self.embedder.encode(texts).tolist()
+
+        store = PGVector.from_documents(
+            documents=docs,
+            embedding=embedding_func,
+            collection_name=f"temp_semrerank_{uuid.uuid4().hex[:8]}",
+            connection=db_url
+        )
+
+        # 2. 各単語の類似語を検索
         relatedness = {}
-        words_list = list(words)
+        k = max(1, int(len(words) * self.reltop))  # 上位reltop%を選択
 
-        for i, w1 in enumerate(words_list):
-            if w1 not in embeddings:
-                continue
-            for j, w2 in enumerate(words_list):
-                if i >= j or w2 not in embeddings:  # 対称性を利用
-                    continue
+        for word in words:
+            results = store.similarity_search_with_score(word, k=k)
+            for doc, score in results:
+                similar_word = doc.page_content
+                if score >= self.relmin and similar_word != word:
+                    relatedness[(word, similar_word)] = score
+                    relatedness[(similar_word, word)] = score  # 対称性
 
-                # コサイン類似度
-                sim = cosine_similarity(
-                    embeddings[w1].reshape(1, -1),
-                    embeddings[w2].reshape(1, -1)
-                )[0, 0]
-
-                # 両方向に保存
-                relatedness[(w1, w2)] = sim
-                relatedness[(w2, w1)] = sim
+        # 3. 一時テーブル削除
+        try:
+            store.delete_collection()
+        except Exception as e:
+            logger.warning(f"Failed to cleanup temp collection: {e}")
 
         return relatedness
 
