@@ -10,6 +10,7 @@ Synonym Extractor
 import json
 from typing import List, Dict, Tuple, Optional, Any
 from dataclasses import dataclass, field
+from collections import defaultdict
 
 import numpy as np
 from langchain_openai import AzureChatOpenAI, AzureOpenAIEmbeddings
@@ -477,20 +478,22 @@ class HierarchicalSynonymExtractor:
             cluster_id_to_node[cluster_id] = hierarchy
 
         # condensed_treeから親子関係を構築
+        import logging
+        logger = logging.getLogger(__name__)
+
         if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
-            if verbose:
-                print(f"  condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
+            logger.info(f"condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
             self._extract_parent_child_relationships(
                 condensed_tree,
                 cluster_id_to_node,
                 hierarchies,
                 verbose=verbose
             )
-        elif verbose:
+        else:
             if not hasattr(clusterer, 'condensed_tree_'):
-                print(f"  警告: condensed_tree_が存在しません")
+                logger.warning(f"condensed_tree_が存在しません")
             elif len(cluster_id_to_node) <= 1:
-                print(f"  階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
+                logger.info(f"階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
 
         return hierarchies
 
@@ -521,8 +524,9 @@ class HierarchicalSynonymExtractor:
             # 内部ノードIDは大きい値（n_samples以上）
             n_samples = max(max(row['parent'], row['child']) for row in tree_data) + 1
 
-            if verbose:
-                print(f"    condensed_tree: {len(tree_data)}行, クラスタID={cluster_ids}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"condensed_tree: {len(tree_data)}行, クラスタID={cluster_ids}")
 
             # 親子関係のマッピング（内部ノードIDで）
             parent_to_children = defaultdict(list)
@@ -595,15 +599,17 @@ class HierarchicalSynonymExtractor:
                         hierarchies[parent_node.representative] = parent_node
                         created_parents.add(parent_node_id)
 
-            if verbose:
-                if created_parents:
-                    print(f"  階層構造: {len(created_parents)}個の親クラスタを生成")
-                else:
-                    print(f"  階層構造: 親クラスタなし（全て葉ノード）")
+            import logging
+            logger = logging.getLogger(__name__)
+            if created_parents:
+                logger.info(f"階層構造: {len(created_parents)}個の親クラスタを生成")
+            else:
+                logger.info(f"階層構造: 親クラスタなし（全て葉ノード）")
 
         except Exception as e:
-            if verbose:
-                print(f"  警告: condensed_treeからの階層抽出失敗: {e}")
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"condensed_treeからの階層抽出失敗: {e}", exc_info=True)
             # エラー時はフラット構造のまま
 
     def _select_representative(self, terms: List[Term]) -> str:
