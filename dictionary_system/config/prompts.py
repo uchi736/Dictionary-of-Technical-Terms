@@ -45,6 +45,19 @@ DEFINITION_GENERATION_USER_PROMPT_SIMPLE = """以下の専門用語の定義を�
 
 上記の情報を基に、正確で理解しやすい定義を作成してください。"""
 
+DEFINITION_GENERATION_USER_PROMPT_WITH_HIERARCHY = """以下の専門用語の定義を作成してください。
+
+**専門用語:** {term}
+
+**関連コンテキスト（文書からの抽出）:**
+{context}
+
+**階層的コンテキスト:**
+{hierarchy_context}
+
+上記の情報（特に階層的関係）を活用し、正確で理解しやすい定義を作成してください。
+上位概念や関連概念との関係を明確にすると、より理解しやすい定義になります。"""
+
 SIMILAR_TERMS_EXTRACTION_SYSTEM_PROMPT = """あなたは専門用語の関連語抽出の専門家です。
 
 **役割:**
@@ -296,6 +309,14 @@ def get_definition_prompt_messages_simple():
     return [
         ("system", DEFINITION_GENERATION_SYSTEM_PROMPT),
         ("user", DEFINITION_GENERATION_USER_PROMPT_SIMPLE)
+    ]
+
+
+def get_definition_prompt_messages_with_hierarchy():
+    """階層コンテキスト付き定義生成プロンプト"""
+    return [
+        ("system", DEFINITION_GENERATION_SYSTEM_PROMPT),
+        ("user", DEFINITION_GENERATION_USER_PROMPT_WITH_HIERARCHY)
     ]
 
 

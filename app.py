@@ -272,21 +272,68 @@ if st.session_state.extraction_results:
                     noise = len(enriched) - clustered
                     st.metric("ノイズ (未クラスタ化)", noise)
 
-            # クラスタ表示
-            for i, (rep, node) in enumerate(hierarchy.items(), 1):
-                with st.expander(
-                    f"クラスタ {i}: **{node.category_name or rep}** "
-                    f"({len(node.terms)}件)"
-                ):
-                    if node.category_name:
-                        st.markdown(f"**カテゴリ:** {node.category_name}")
-                        st.markdown(f"**信頼度:** {node.category_confidence:.2f}")
-                        if node.category_reason:
-                            st.caption(node.category_reason)
+            # 表示モード選択
+            view_mode = st.radio(
+                "表示モード",
+                ["ツリービュー", "リストビュー"],
+                horizontal=True
+            )
 
-                    st.markdown("**含まれる用語:**")
-                    terms_list = ", ".join(node.terms)
-                    st.markdown(f"_{terms_list}_")
+            if view_mode == "ツリービュー":
+                # ツリー形式表示
+                st.markdown("### 📁 階層ツリー")
+
+                # 用語→クラスタのマッピングを作成
+                term_to_cluster = {}
+                for rep, node in hierarchy.items():
+                    for term in node.terms:
+                        term_to_cluster[term] = (node.category_name or rep, node)
+
+                # カテゴリ別にソート
+                sorted_hierarchy = sorted(
+                    hierarchy.items(),
+                    key=lambda x: x[1].category_name or x[0]
+                )
+
+                for i, (rep, node) in enumerate(sorted_hierarchy, 1):
+                    category = node.category_name or f"クラスタ {i}"
+
+                    # カテゴリレベル
+                    with st.expander(f"📂 **{category}** ({len(node.terms)}件)", expanded=False):
+                        if node.category_reason:
+                            st.caption(f"💡 {node.category_reason}")
+
+                        # 用語リスト（ツリー形式）
+                        for term in sorted(node.terms):
+                            # 用語の詳細情報を取得
+                            term_obj = next((t for t in st.session_state.extraction_results if t.term == term), None)
+
+                            if term_obj:
+                                score_str = f"(スコア: {term_obj.score:.3f})" if hasattr(term_obj, 'score') else ""
+                                st.markdown(f"└─ **{term}** {score_str}")
+
+                                if term_obj.definition:
+                                    with st.container():
+                                        st.caption(f"📝 {term_obj.definition[:150]}..." if len(term_obj.definition) > 150 else f"📝 {term_obj.definition}")
+                            else:
+                                st.markdown(f"└─ {term}")
+
+            else:
+                # 既存のリストビュー
+                for i, (rep, node) in enumerate(hierarchy.items(), 1):
+                    with st.expander(
+                        f"クラスタ {i}: **{node.category_name or rep}** "
+                        f"({len(node.terms)}件)"
+                    ):
+                        if node.category_name:
+                            st.markdown(f"**カテゴリ:** {node.category_name}")
+                            st.markdown(f"**信頼度:** {node.category_confidence:.2f}")
+                            if node.category_reason:
+                                st.caption(node.category_reason)
+
+                        st.markdown("**含まれる用語:**")
+                        terms_list = ", ".join(node.terms)
+                        st.markdown(f"_{terms_list}_")
 
             # ネットワークグラフ可視化
             st.subheader("クラスタネットワーク")

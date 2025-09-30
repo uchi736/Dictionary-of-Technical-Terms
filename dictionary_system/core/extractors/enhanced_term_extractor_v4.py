@@ -158,6 +158,9 @@ class EnhancedTermExtractorV4(BaseExtractor):
         self.use_umap = use_umap
         self.umap_n_components = umap_n_components
 
+        # 階層情報（extractメソッドで設定）
+        self.hierarchy = None
+
         # Azure OpenAI初期化
         if use_azure_openai:
             self._setup_azure_openai()
@@ -283,14 +286,15 @@ class EnhancedTermExtractorV4(BaseExtractor):
         # 定義生成数を動的に計算
         definition_count = self._calculate_definition_count(len(terms))
 
-        # STEP 7: RAG定義生成 (上位N件)
+        # STEP 7: RAG定義生成 (上位N件) - 階層情報も渡す
         if self.enable_definition_generation:
-            logger.info(f"STEP 7: RAG definition generation (top {definition_count} terms)")
+            logger.info(f"STEP 7: RAG definition generation (top {definition_count} terms) with hierarchy context")
             terms_for_definition = terms[:definition_count]
             terms_with_definition = enrich_terms_with_definitions(
                 terms=terms_for_definition,
                 text=text,
-                verbose=False
+                verbose=False,
+                hierarchy=self.hierarchy  # 階層情報を渡す
             )
             # 定義生成されなかった残りの用語と結合
             terms = terms_with_definition + terms[definition_count:]

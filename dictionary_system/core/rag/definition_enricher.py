@@ -35,7 +35,7 @@ class DefinitionEnricher:
     def __init__(
         self,
         config: Optional[Config] = None,
-        use_pgvector: bool = False,
+        use_pgvector: bool = True,
         use_bm25: bool = True,
         batch_size: int = 5
     ):
@@ -131,7 +131,8 @@ class DefinitionEnricher:
         terms: List[Term],
         top_n: Optional[int] = None,
         verbose: bool = True,
-        use_batch: bool = True
+        use_batch: bool = True,
+        hierarchy: Optional[Dict] = None
     ) -> List[Term]:
         """
         用語リストに定義を付与（LCEL バッチ処理）
@@ -141,11 +142,16 @@ class DefinitionEnricher:
             top_n: 上位N件のみ処理
             verbose: 進捗表示
             use_batch: バッチ処理を使用（高速）
+            hierarchy: クラスタ階層情報（SynonymHierarchy辞書）
 
         Returns:
             定義が付与された用語リスト
         """
         target_terms = terms[:top_n] if top_n else terms
+
+        # 階層情報がある場合は階層対応チェインを使用
+        if hierarchy:
+            return self._enrich_terms_with_hierarchy(target_terms, hierarchy, verbose, use_batch)
 
         if use_batch and len(target_terms) > 1:
             if verbose:
@@ -193,13 +199,127 @@ class DefinitionEnricher:
         term.definition = definition.strip()
         return term
 
+    def _build_hierarchy_context(self, term: str, hierarchy: Dict) -> str:
+        """
+        用語の階層的コンテキストを構築
+
+        Args:
+            term: 対象用語
+            hierarchy: クラスタ階層情報（{代表語: SynonymHierarchy}）
+
+        Returns:
+            階層的コンテキスト文字列
+        """
+        # 用語が所属するクラスタを探す
+        parent_cluster = None
+        sibling_terms = []
+        cluster_name = None
+
+        for rep, node in hierarchy.items():
+            if term in node.terms:
+                cluster_name = node.category_name or f"クラスタ {node.cluster_id}"
+                sibling_terms = [t for t in node.terms if t != term]
+
+                # 親クラスタ情報（将来的に実装可能）
+                # HDBSCANのcondensed_treeから親クラスタ取得
+
+                break
+
+        if not cluster_name:
+            return "階層情報なし"
+
+        context_parts = [f"【所属カテゴリ】{cluster_name}"]
+
+        if sibling_terms:
+            # 同じクラスタの関連用語（最大5件）
+            sibling_list = ", ".join(sibling_terms[:5])
+            if len(sibling_terms) > 5:
+                sibling_list += f" など（他{len(sibling_terms)-5}件）"
+            context_parts.append(f"【関連用語（同カテゴリ）】{sibling_list}")
+
+        return "\n".join(context_parts)
+
+    def _enrich_terms_with_hierarchy(
+        self,
+        terms: List[Term],
+        hierarchy: Dict,
+        verbose: bool = True,
+        use_batch: bool = True
+    ) -> List[Term]:
+        """
+        階層情報を考慮した定義生成
+
+        Args:
+            terms: 用語リスト
+            hierarchy: クラスタ階層情報
+            verbose: 進捗表示
+            use_batch: バッチ処理使用
+
+        Returns:
+            定義が付与された用語リスト
+        """
+        from langchain_core.prompts import ChatPromptTemplate
+        from langchain_core.output_parsers import StrOutputParser
+        from langchain_core.runnables import RunnableParallel, RunnablePassthrough
+        from dictionary_system.config.prompts import get_definition_prompt_messages_with_hierarchy
+
+        if verbose:
+            print(f"階層対応定義生成: {len(terms)}件")
+
+        # 階層対応プロンプト
+        prompt = ChatPromptTemplate.from_messages(
+            get_definition_prompt_messages_with_hierarchy()
+        )
+
+        # 階層対応チェイン構築
+        hierarchy_chain = (
+            RunnableParallel({
+                "term": RunnablePassthrough(),
+                "context": lambda x: self._get_context_for_term(x),
+                "hierarchy_context": lambda x: self._build_hierarchy_context(x, hierarchy)
+            })
+            | prompt
+            | self.llm
+            | StrOutputParser()
+        )
+
+        if use_batch and len(terms) > 1:
+            term_texts = [term.term for term in terms]
+            definitions = hierarchy_chain.batch(term_texts)
+
+            for term, definition in zip(terms, definitions):
+                term.definition = definition.strip()
+        else:
+            for i, term in enumerate(terms, 1):
+                if verbose:
+                    print(f"[{i}/{len(terms)}] {term.term}")
+
+                definition = hierarchy_chain.invoke(term.term)
+                term.definition = definition.strip()
+
+        return terms
+
+    def _get_context_for_term(self, term: str) -> str:
+        """用語の関連コンテキストを取得"""
+        if self.use_pgvector and self.vector_store:
+            results = self.vector_store.similarity_search(term, k=3)
+            return "\n".join([doc.page_content for doc in results])
+        elif self.use_bm25 and self.bm25_index:
+            from rank_bm25 import BM25Okapi
+            query_tokens = term.split()
+            scores = self.bm25_index.get_scores(query_tokens)
+            top_indices = sorted(range(len(scores)), key=lambda i: scores[i], reverse=True)[:3]
+            return "\n".join([self.bm25_index.corpus[i] for i in top_indices if i < len(self.bm25_index.corpus)])
+        return ""
+
 
 def enrich_terms_with_definitions(
     terms: List[Term],
     text: str,
     config: Optional[Config] = None,
     top_n: Optional[int] = None,
-    verbose: bool = True
+    verbose: bool = True,
+    hierarchy: Optional[Dict] = None
 ) -> List[Term]:
     """
     簡易関数: 用語リストに定義を一括付与
@@ -210,6 +330,7 @@ def enrich_terms_with_definitions(
         config: 設定（Noneの場合は自動生成）
         top_n: 上位N件のみ処理
         verbose: 進捗表示
+        hierarchy: クラスタ階層情報（SynonymHierarchy辞書）
 
     Returns:
         定義が付与された用語リスト
@@ -224,7 +345,7 @@ def enrich_terms_with_definitions(
     if verbose:
         print("定義生成開始...\n")
 
-    return enricher.enrich_terms(terms, top_n=top_n, verbose=verbose)
+    return enricher.enrich_terms(terms, top_n=top_n, verbose=verbose, hierarchy=hierarchy)
 
 
 def filter_technical_terms_by_definition(
