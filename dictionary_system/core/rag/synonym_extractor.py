@@ -448,16 +448,19 @@ class HierarchicalSynonymExtractor:
         clusterer,
         verbose: bool = True
     ) -> Dict[str, SynonymHierarchy]:
-        """階層構造を構築（用語名の包含関係から上位下位を推定）"""
+        """階層構造を構築（HDBSCANのcondensed_treeから真の階層を抽出）"""
         from collections import defaultdict
         import logging
         logger = logging.getLogger(__name__)
 
         # 葉ノードのクラスタリング結果
         cluster_terms = defaultdict(list)
+        term_to_cluster = {}
+        
         for i, label in enumerate(clusterer.labels_):
             if label != -1:
                 cluster_terms[label].append(terms[i])
+                term_to_cluster[terms[i].term] = label
 
         # 葉レベルのクラスタを作成
         hierarchies = {}
@@ -476,11 +479,123 @@ class HierarchicalSynonymExtractor:
             hierarchies[representative] = hierarchy
             cluster_id_to_node[cluster_id] = hierarchy
 
-        # 用語名の包含関係から階層を構築
-        logger.info(f"用語包含関係解析開始: {len(hierarchies)}個のクラスタ")
-        self._extract_subsumption_hierarchy(hierarchies, verbose=verbose)
+        # condensed_treeから真の階層を構築
+        if hasattr(clusterer, 'condensed_tree_') and len(cluster_id_to_node) > 1:
+            logger.info(f"condensed_tree解析開始: {len(cluster_id_to_node)}個のクラスタ")
+            self._extract_hdbscan_hierarchy(
+                clusterer.condensed_tree_,
+                cluster_id_to_node,
+                hierarchies,
+                term_to_cluster,
+                verbose=verbose
+            )
+        else:
+            if not hasattr(clusterer, 'condensed_tree_'):
+                logger.warning(f"condensed_tree_が存在しません")
+            elif len(cluster_id_to_node) <= 1:
+                logger.info(f"階層構築スキップ: クラスタ数が1以下 ({len(cluster_id_to_node)})")
 
         return hierarchies
+
+    def _extract_hdbscan_hierarchy(
+        self,
+        condensed_tree,
+        cluster_id_to_node: Dict[int, SynonymHierarchy],
+        hierarchies: Dict[str, SynonymHierarchy],
+        term_to_cluster: Dict[str, int],
+        verbose: bool = True
+    ):
+        """
+        HDBSCANのcondensed_treeから真の階層を抽出
+        
+        condensed_treeの構造:
+        - parent: 親ノードID（内部ノードは大きい値）
+        - child: 子ノードID（クラスタIDは小さい値 0,1,2...）
+        - lambda_val: 分離の強さ
+        - child_size: 子のサイズ
+        
+        階層構築の方針:
+        1. 最も密接に関連するクラスタを見つける（同じ親から分離）
+        2. それらを親ノードの下にグループ化
+        3. 親ノードには代表用語を割り当て
+        """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            tree_data = condensed_tree._raw_tree
+            cluster_ids = set(cluster_id_to_node.keys())
+            
+            logger.info(f"condensed_tree: {len(tree_data)}行, クラスタ数={len(cluster_ids)}")
+            
+            # 親ノードIDごとに子クラスタをグループ化
+            parent_to_clusters = defaultdict(list)
+            
+            for row in tree_data:
+                parent = int(row['parent'])
+                child = int(row['child'])
+                lambda_val = float(row['lambda_val'])
+                
+                # 子が最終クラスタの場合
+                if child in cluster_ids:
+                    parent_to_clusters[parent].append({
+                        'cluster_id': child,
+                        'lambda': lambda_val
+                    })
+            
+            # 複数のクラスタを持つ親ノードのみ処理
+            parent_nodes_created = 0
+            
+            for parent_id, children_info in parent_to_clusters.items():
+                if len(children_info) < 2:
+                    continue  # 1つしか子がない親はスキップ
+                
+                # 子クラスタのノードを取得
+                child_cluster_ids = [c['cluster_id'] for c in children_info]
+                child_nodes = [cluster_id_to_node[cid] for cid in child_cluster_ids]
+                
+                # 親ノードの代表語：子クラスタの用語から選ぶ
+                all_child_terms = []
+                for child_node in child_nodes:
+                    all_child_terms.extend(child_node.terms)
+                
+                if not all_child_terms:
+                    continue
+                
+                # 最も短い用語を親の代表語にする
+                parent_representative = min(all_child_terms, key=len)
+                
+                # 親ノードを作成
+                parent_node = SynonymHierarchy(
+                    representative=parent_representative,
+                    terms=[],  # 親ノードは直接用語を持たない
+                    cluster_id=parent_id,
+                    level=1,
+                    category_name=f"{parent_representative}系"
+                )
+                
+                # 子ノードを親に追加
+                for child_node in child_nodes:
+                    parent_node.children[child_node.representative] = child_node
+                    child_node.level = 1
+                    
+                    # 子をトップレベルから削除
+                    if child_node.representative in hierarchies:
+                        del hierarchies[child_node.representative]
+                
+                # 親をトップレベルに追加
+                hierarchies[parent_node.representative] = parent_node
+                parent_nodes_created += 1
+                
+                logger.info(f"  親ノード作成: {parent_representative} ({len(child_nodes)}個の子クラスタ)")
+            
+            if parent_nodes_created > 0:
+                logger.info(f"階層構造: {parent_nodes_created}個の親ノードを生成")
+            else:
+                logger.info(f"階層構造: 親ノードなし（全クラスタが独立）")
+                
+        except Exception as e:
+            logger.error(f"condensed_treeからの階層抽出失敗: {e}", exc_info=True)
 
     def _extract_subsumption_hierarchy(
         self,
